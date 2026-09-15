@@ -12,20 +12,25 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
   let receipt = null;
   let challenge = null;
   let acknowledged = false;
+  let offered = null;
   const seen = new Set();
+  const retiredTurns = new Set();
   const deny = reason => ({ success: false, value: { denied: reason } });
   const valid = params => !closed && isAlive() && params.threadId === primaryThread &&
     typeof params.turnId === 'string' && params.turnId === activeTurn;
 
   return Object.freeze({
     beginTurn(thread, turn) {
-      if (closed || thread !== primaryThread || typeof turn !== 'string' || !turn || activeTurn) {
+      if (closed || thread !== primaryThread || typeof turn !== 'string' || !turn || activeTurn || retiredTurns.has(turn)) {
         throw new Error('Cannot register this turn');
       }
       activeTurn = turn;
     },
     endTurn(thread, turn) {
-      if (thread === primaryThread && turn === activeTurn) activeTurn = null;
+      if (thread === primaryThread && turn === activeTurn) {
+        retiredTurns.add(turn);
+        activeTurn = null;
+      }
     },
     close() {
       closed = true;
@@ -44,7 +49,10 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
       if (busy) return deny('operation-in-progress');
 
       if (params.tool === 'fm_notification_check') {
-        if (Object.keys(args).length || receipt) return deny('check-already-used-or-invalid-arguments');
+        if (Object.keys(args).length) return deny('invalid-arguments');
+        // Redelivery is read-only: cancellation or a lost response must not
+        // strand pending work or start another native check before handling it.
+        if (receipt && !acknowledged) return { success: true, value: { ...offered } };
       } else if (params.tool === 'fm_notification_ack') {
         if (Object.keys(args).sort().join(',') !== 'observed,receipt' || !receipt ||
             args.receipt !== receipt || args.observed !== challenge) {
@@ -68,10 +76,10 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
           }
           receipt = note.receipt;
           challenge = note.challenge;
+          acknowledged = false;
+          offered = Object.freeze({ message: note.message, receipt, challenge, checkpointExit: note.checkpointExit });
           if (!valid(params)) return deny('wrong-thread-turn-or-replay');
-          return { success: true, value: {
-            message: note.message, receipt, challenge, checkpointExit: note.checkpointExit,
-          } };
+          return { success: true, value: { ...offered } };
         }
         const result = await operate('ack', { receipt, observed: args.observed });
         if (result?.operationState !== 'acknowledged') throw new Error('Acknowledgement did not complete');

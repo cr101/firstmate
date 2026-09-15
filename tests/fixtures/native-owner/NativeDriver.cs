@@ -14,6 +14,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 
 public static partial class NativeOwner {
+    static NativeReceiptJournal operationJournal;
     static string LogonSid() {
         using(var identity=WindowsIdentity.GetCurrent()) {
             foreach(var row in TokenGroups(identity.Token,2))
@@ -157,7 +158,10 @@ public static partial class NativeOwner {
         var scopes=new List<ChildScope>();
         NativeHomeLease lease=null;
         try {
-            if(config.ContainsKey("leaseHome")) lease=new NativeHomeLease((string)config["leaseHome"]);
+            if(config.ContainsKey("leaseHome")) {
+                lease=new NativeHomeLease((string)config["leaseHome"]);
+                operationJournal=new NativeReceiptJournal(lease,session);
+            }
             var values = EnvironmentFor(pipeName, session, home, nonce);
             values["MSYS"]="winsymlinks:nativestrict";
             if(config.ContainsKey("apiDry") && (bool)config["apiDry"]) values["FM_PROBE_API_DRY"]="1";
@@ -265,6 +269,7 @@ public static partial class NativeOwner {
             }
             foreach (IntPtr h in new [] {child.thread,child.process,stdout,stderr,stdin,job}) if (h!=IntPtr.Zero) CloseHandle(h);
             if(env!=IntPtr.Zero) Marshal.FreeHGlobal(env);
+            if(operationJournal!=null) { operationJournal.Dispose();operationJournal=null; }
             if(lease!=null) lease.Dispose();
         }
     }
@@ -282,9 +287,9 @@ public static partial class NativeOwner {
             string file=Path.Combine(home,"notification-"+pendingOperation.purpose+".json");
             var output=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file));
             if(pendingOperation.purpose=="check") {
-                delivered=output; receipt=Guid.NewGuid().ToString("N");
-                delivered["receipt"]=receipt;
-            } else consumed=true;
+                delivered=operationJournal.Present(output); receipt=(string)delivered["receipt"];
+                consumed=false;
+            } else { operationJournal.CompleteAcknowledgement(receipt);consumed=true; }
             pendingOperation=null;
         }
         string action=request.ContainsKey("action") ? (string)request["action"] : "";
@@ -294,10 +299,12 @@ public static partial class NativeOwner {
             return;
         }
         if(!ready || pendingOperation!=null) { verdict["operationState"]="busy"; return; }
-        if(action=="check" && checkStarts==0) checkStarts++;
-        else if(action=="ack" && delivered!=null && !consumed && ackStarts==0 && request.ContainsKey("receipt") && (string)request["receipt"]==receipt && request.ContainsKey("observed") && (string)request["observed"]==(string)delivered["challenge"]) {
+        if(operationJournal.NeedsReconciliation) { verdict["operationState"]="reconciliation-required";return; }
+        if(action=="check" && (delivered==null || consumed)) checkStarts++;
+        else if(action=="ack" && delivered!=null && !consumed && request.ContainsKey("receipt") && (string)request["receipt"]==receipt && request.ContainsKey("observed") && (string)request["observed"]==(string)delivered["challenge"]) {
+            var acknowledged=operationJournal.BeginAcknowledgement(receipt,(string)request["observed"]);
             ackStarts++;
-            File.WriteAllText(Path.Combine(home,"notification-ack-request.json"),Json.Serialize(delivered));
+            File.WriteAllText(Path.Combine(home,"notification-ack-request.json"),Json.Serialize(acknowledged));
         } else { verdict["operationState"]="denied"; return; }
         pendingOperation=StartScope("owner-operation",job,environment,home,ref startup,action);
         scopes.Add(pendingOperation);
@@ -306,6 +313,7 @@ public static partial class NativeOwner {
     }
     public static int Main(string[] args) {
         try {
+            if(args.Length==1 && args[0]=="receipt-tests") return ReceiptTests.Run();
             if(args.Length>=3 && args[0]=="owner") return OwnerClient(args[1],args[2],args.Length>3 ? args[3] : "");
             if(args.Length>0 && args[0]=="client") return Client(args.Length>1 ? args[1] : "agent-tool");
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }

@@ -14,6 +14,7 @@ public sealed class NativeHomeLease : IDisposable {
     static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
     FileStream file;
     public readonly string Home;
+    internal bool IsHeld { get { return file!=null; } }
     public string PreviousGeneration { get; private set; }
     [StructLayout(LayoutKind.Sequential)] struct FT { public uint low,high; }
     [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);

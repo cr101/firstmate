@@ -32,6 +32,13 @@ const delivered=read(path.join(home,'notification-check.json'));
 const acknowledgement=read(path.join(home,'notification-ack-request.json'));
 for(const key of ['seq','generation','note','challenge'])assert.equal(acknowledgement[key],delivered[key]);
 assert.equal(delivered.challenge,primary[1].arguments.observed);
+const journal=fs.readFileSync(path.join(home,'home/owner-receipts.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+assert.deepEqual(journal.map(row=>row.event),['session','presented','ack-started','acknowledged']);
+assert.ok(journal.every(row=>row.generation===native.probeGeneration));
+for(const row of journal.slice(1)) {
+ assert.equal(row.receipt,primary[0].result.receipt);
+ for(const key of ['seq','generation','note','challenge'])assert.equal(row.payload[key],delivered[key]);
+}
 assert.ok(fs.readFileSync(path.join(home,'cycle-delivery.log'),'utf8').includes(`--ack-through ${delivered.seq} --recovery-generation ${delivered.generation}`));
 assert.equal(read(path.join(home,'notification-ack.json')).acknowledged,true);
 const operational=path.join(home,'home','state');
@@ -46,5 +53,5 @@ if(!fs.existsSync(archive)) {
  fs.cpSync(home,path.join(archive,'live'),{recursive:true});
 }
 
-fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.root,'codex-tool-gate.mjs'))},null,2));
+fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,durableAcknowledgement:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.root,'codex-tool-gate.mjs'))},null,2));
 console.log('PASS: consolidated candidate protocol, ownership, and durable acknowledgement evidence.');

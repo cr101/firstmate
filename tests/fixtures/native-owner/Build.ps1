@@ -7,8 +7,10 @@ $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $root = Join-Path ([IO.Path]::GetTempPath()) ('fm-native-candidate-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root | Out-Null
 $binary = Join-Path $root 'SessionProbe.exe'
-$sources = @((Join-Path $repo 'bin/native-owner/NativeOwner.cs'), (Join-Path $repo 'bin/native-owner/NativeHomeLease.cs'), (Join-Path $PSScriptRoot 'NativeDriver.cs'))
+$sources = @((Join-Path $repo 'bin/native-owner/NativeOwner.cs'), (Join-Path $repo 'bin/native-owner/NativeHomeLease.cs'), (Join-Path $PSScriptRoot 'NativeDriver.cs'), (Join-Path $repo 'bin/native-owner/NativeReceiptJournal.cs'), (Join-Path $PSScriptRoot 'ReceiptTests.cs'))
 Add-Type -Path $sources -OutputAssembly $binary -OutputType ConsoleApplication -ReferencedAssemblies System.dll,System.Core.dll,System.Web.Extensions.dll
+& $binary receipt-tests
+if ($LASTEXITCODE -ne 0) { throw 'Durable receipt lifecycle tests failed' }
 $copy = Join-Path $root 'firstmate'
 & git -c core.symlinks=true clone --quiet --no-local --single-branch $repo $copy
 if ($LASTEXITCODE -ne 0) { throw 'Disposable clone failed' }

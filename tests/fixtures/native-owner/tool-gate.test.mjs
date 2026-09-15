@@ -44,6 +44,20 @@ test('dead connection and completed turn deny even with correct IDs',async()=>{
  const f=fixture();f.die();assert.equal((await f.gate.handle(check())).success,false);assert.equal(f.calls.length,0);
  const g=fixture();g.gate.endTurn('primary','turn');assert.equal((await g.gate.handle(check())).success,false);assert.equal(g.calls.length,0);
 });
+test('completed turn cannot be resurrected',()=>{
+ const {gate}=fixture();gate.endTurn('primary','turn');assert.throws(()=>gate.beginTurn('primary','turn'));
+});
+test('next cycle works without reauthorizing an earlier receipt',async()=>{
+ let cycle=0;
+ const {gate,calls}=fixture(action=>action==='check'?{operationState:'delivered',notification:{...message,receipt:'receipt'+(++cycle)}}:{operationState:'acknowledged'});
+ await gate.handle(check());
+ assert.equal((await gate.handle(ack({arguments:{receipt:'receipt1',observed:'observed'}}))).success,true);
+ gate.endTurn('primary','turn');gate.beginTurn('primary','turn2');
+ assert.equal((await gate.handle(check({turnId:'turn2'}))).success,true);
+ assert.equal((await gate.handle(ack({turnId:'turn2',arguments:{receipt:'receipt1',observed:'observed'}}))).success,false);
+ assert.equal((await gate.handle(ack({turnId:'turn2',callId:'second-ack',arguments:{receipt:'receipt2',observed:'observed'}}))).success,true);
+ assert.equal(calls.length,4);
+});
 test('closed gate cannot be rebound to another thread',()=>{
  const {gate}=fixture();assert.throws(()=>gate.beginTurn('foreign','turn2'));gate.close();assert.throws(()=>gate.beginTurn('primary','turn2'));
 });
@@ -57,6 +71,18 @@ test('late delivery after turn completion grants no further action',async()=>{
  let finish;const {gate,calls}=fixture(()=>new Promise(resolve=>{finish=resolve;}));
  const first=gate.handle(check());gate.endTurn('primary','turn');finish({operationState:'delivered',notification:message});
  assert.equal((await first).success,false);assert.equal((await gate.handle(ack())).success,false);assert.equal(calls.length,1);
+});
+test('pending delivery can be reread without a new native operation',async()=>{
+ const {gate,calls}=fixture();const first=await gate.handle(check());first.value.receipt='caller-change';
+ const second=await gate.handle(check({callId:'redelivery'}));
+ assert.equal(second.value.receipt,'receipt');assert.equal(calls.length,1);
+});
+test('notification arriving after cancellation remains available next turn',async()=>{
+ let finish;const {gate,calls}=fixture(()=>new Promise(resolve=>{finish=resolve;}));
+ const first=gate.handle(check());gate.endTurn('primary','turn');finish({operationState:'delivered',notification:message});
+ assert.equal((await first).success,false);gate.beginTurn('primary','next');
+ const recovered=await gate.handle(check({turnId:'next',callId:'redelivery'}));
+ assert.equal(recovered.success,true);assert.equal(recovered.value.receipt,'receipt');assert.equal(calls.length,1);
 });
 test('operation failure is not reported as success and cannot be blindly retried',async()=>{
  const {gate,calls}=fixture(()=>{throw Error('partial operation requires reconciliation');});

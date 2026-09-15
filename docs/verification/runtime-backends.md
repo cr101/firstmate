@@ -19,7 +19,14 @@ Refresh the portable request-policy regression with:
 bash tests/fm-native-owner-tool-gate.test.sh
 ```
 
-The 17 behavioral cases cover primary-thread/turn binding, duplicate calls, consumed receipts, invalid arguments, arbitrary-command rejection, dead connections, overlapping calls, late delivery, and operation failure without blind retry.
+The 21 behavioral cases cover primary-thread/turn binding, duplicate calls, consumed receipts, invalid arguments, arbitrary-command rejection, dead connections, overlapping calls, late delivery, repeated cycles, retired turns, read-only redelivery after cancellation, and operation failure without blind retry.
+The native controller now persists receipt presentation, acknowledgement intent, and completion under its existing exclusive home lease.
+It flushes acknowledgement intent before invoking the mutation and preserves interrupted attempts for reconciliation rather than retrying them.
+The token-free Windows guard exercises 12 receipt cases, including restart/generation behavior, interrupted and completed attempts, multiple cycles, torn records, file links, and lease revocation, followed by exclusive-owner, normal-exit, controller-loss, orphan-recovery, ambiguous-record, and child-scope tests:
+
+```sh
+bash tests/fm-native-owner-receipt-live-e2e.test.sh
+```
 Refresh the actual Windows integration with the explicit two-model-turn guard:
 
 ```sh
@@ -39,7 +46,9 @@ A repeated receipt and a request from another real thread were refused without a
 The checkpoint exercised its three-second timeout followed by a drain, not immediate interrupt-driven delivery.
 Both app-server threads reported read-only filesystem policy, disabled network access, and approval policy `never`; the two explicitly authorized host operations execute outside ordinary model shell tools.
 Dynamic tool registration requires the experimental API capability in this version.
-This does not establish persistent receipt recovery, cancellation of an already accepted mutation, adversarial Windows path/process races, populated-fleet behavior, or other harness support.
+The actual app-server acknowledgement is also checked against the durable journal's owner generation and target notification.
+This does not establish automatic reconciliation of an interrupted mutation, cancellation of an already accepted mutation, adversarial Windows path/process races, populated-fleet behavior, or other harness support.
+The production launcher and ordinary-startup integration remain disabled while those boundaries are incomplete.
 
 ## Harness detection precedence
 
