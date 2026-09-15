@@ -18,7 +18,17 @@ case "$note" in ''|*[!A-Za-z0-9._-]*) exit 2 ;; esac
 case "$seq" in ''|*[!0-9]*) exit 2 ;; esac
 case "$generation" in ''|*[!A-Za-z0-9._-]*) exit 2 ;; esac
 bin/fm-inbox.sh drain --ack "$note" > "$LOG/cycle-inbox-ack.log"
+if [ "${FM_PROBE_ACK_FAULT:-}" = partial ]; then
+  printf 'partial\n' > "$LOG/ack-fault-ready"
+  sleep 30
+  exit 125
+fi
 bin/fm-wake-drain.sh --ack-through "$seq" --recovery-generation "$generation" > "$LOG/cycle-ack.log" 2>&1
 [ ! -s "$FM_HOME/state/.wake-queue" ]
 [ -f "$FM_HOME/state/inbox/handled/$note.note" ]
+if [ "${FM_PROBE_ACK_FAULT:-}" = complete ]; then
+  printf 'complete\n' > "$LOG/ack-fault-ready"
+  sleep 30
+  exit 125
+fi
 printf '{"acknowledged":true,"queueEmpty":true}\n' > "$LOG/notification-ack.json"

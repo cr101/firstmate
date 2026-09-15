@@ -16,6 +16,14 @@ public static class ReceiptTests {
         using(var lease=new NativeHomeLease(home)) test(lease);
         passed++;Console.WriteLine("PASS: "+name);
     }
+    static string Queue(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".wake-queue"); }
+    static string Pending(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","note-id.note"); }
+    static string Handled(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","handled","note-id.note"); }
+    static void Targets(NativeHomeLease lease) {
+        Directory.CreateDirectory(Path.GetDirectoryName(Handled(lease)));
+        File.WriteAllText(Pending(lease),"original captured inbox record\n");
+        File.WriteAllText(Queue(lease),"1\t1\tcheck\tinbox:note-id\tcaptain inbox note\n");
+    }
     public static int Run() {
         Case("one writer and unobserved acknowledgement refusal",lease=>{
             using(var journal=new NativeReceiptJournal(lease,A)) {
@@ -100,6 +108,48 @@ public static class ReceiptTests {
             using(var journal=new NativeReceiptJournal(lease,A)) {
                 var note=journal.Present(Payload("first"));lease.Dispose();
                 Refuses(()=>journal.BeginAcknowledgement((string)note["receipt"],"first"),"Released lease authorized mutation");
+            }
+        });
+        foreach(string scenario in new [] {"complete","newer","pending","note-only","wake-only","changed-note","missing-queue","malformed-queue","old-row-remains","no-evidence","duplicate-pending","reparse-handled"}) {
+            Case("interrupted recovery: "+scenario,lease=>{
+                Targets(lease);string receipt;
+                using(var journal=new NativeReceiptJournal(lease,A)) {
+                    var delivery=journal.Present(Payload("first"));receipt=(string)delivery["receipt"];
+                    var evidence=NativeAcknowledgementEvidence.Capture(lease,delivery);
+                    journal.BeginAcknowledgement(receipt,"first",scenario=="no-evidence" ? null : evidence);
+                }
+                if(scenario!="pending" && scenario!="wake-only") File.Move(Pending(lease),Handled(lease));
+                if(scenario!="pending" && scenario!="note-only") File.WriteAllText(Queue(lease),"");
+                if(scenario=="newer") File.WriteAllText(Queue(lease),"2\t2\tcheck\tnew-work\tuntouched\n");
+                if(scenario=="changed-note") File.AppendAllText(Handled(lease),"changed");
+                if(scenario=="missing-queue") File.Delete(Queue(lease));
+                if(scenario=="malformed-queue") File.WriteAllText(Queue(lease),"torn");
+                if(scenario=="old-row-remains") File.WriteAllText(Queue(lease),"1\t1\tcheck\tdifferent-key\tunknown\n");
+                if(scenario=="duplicate-pending") File.Copy(Handled(lease),Pending(lease));
+                if(scenario=="reparse-handled") {
+                    string original=Path.GetDirectoryName(Handled(lease)),other=Path.Combine(lease.Home,"other-handled");Directory.Move(original,other);
+                    Expect(CreateSymbolicLink(original,other,3),"Directory symlink fixture failed");
+                }
+                string before=File.Exists(Queue(lease)) ? File.ReadAllText(Queue(lease)) : null;
+                bool complete=scenario=="complete" || scenario=="newer";
+                using(var journal=new NativeReceiptJournal(lease,B)) {
+                    Expect(journal.ReconcileCompletedAcknowledgements()==(complete ? 1 : 0),"Incorrect recovery classification: "+scenario);
+                    Expect(journal.NeedsReconciliation!=complete,"Incorrect reconciliation obligation");
+                    Refuses(()=>journal.BeginAcknowledgement(receipt,"first"),"Old receipt became reusable");
+                    Expect(journal.ReconcileCompletedAcknowledgements()==0,"Recovery replay changed history");
+                }
+                using(var journal=new NativeReceiptJournal(lease,B)) Expect(journal.NeedsReconciliation!=complete,"Recovery result did not survive reopening");
+                Expect(before==(File.Exists(Queue(lease)) ? File.ReadAllText(Queue(lease)) : null),"Recovery mutated wake data");
+            });
+        }
+        Case("acknowledgement evidence cannot cross homes",lease=>{
+            Targets(lease);
+            string otherHome=Path.Combine(Path.GetTempPath(),"fm-receipts-other-"+Guid.NewGuid().ToString("N"));
+            using(var other=new NativeHomeLease(otherHome)) using(var journal=new NativeReceiptJournal(lease,A)) {
+                Targets(other);var delivery=journal.Present(Payload("first"));
+                var evidence=NativeAcknowledgementEvidence.Capture(other,delivery);
+                Refuses(()=>journal.BeginAcknowledgement((string)delivery["receipt"],"first",evidence),"Foreign home evidence accepted");
+                Expect(!journal.NeedsReconciliation,"Rejected evidence created an attempt");
             }
         });
         Console.WriteLine("RECEIPT_TESTS_PASS "+passed);return 0;

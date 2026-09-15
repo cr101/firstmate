@@ -15,6 +15,7 @@ using System.Web.Script.Serialization;
 
 public static partial class NativeOwner {
     static NativeReceiptJournal operationJournal;
+    static bool shutdownRequested;
     static string LogonSid() {
         using(var identity=WindowsIdentity.GetCurrent()) {
             foreach(var row in TokenGroups(identity.Token,2))
@@ -51,6 +52,7 @@ public static partial class NativeOwner {
         IntPtr operationEnvironment=IntPtr.Zero;
         if(scope.job==IntPtr.Zero) throw Error("CreateJobObject child scope");
         try {
+            if(role=="owner-operation") NativeOperationLifetime.Configure(scope.job);
             string operation=role=="owner-operation" ? (purpose=="startup" ? "owner-operation" : "notification-operation "+purpose) : "scoped-client "+role;
             if(role=="owner-operation") {
                 // Only this fixed, non-extensible test operation receives the grant.
@@ -157,14 +159,21 @@ public static partial class NativeOwner {
         Process outsider = null;
         var scopes=new List<ChildScope>();
         NativeHomeLease lease=null;
+        int recoveredAcknowledgements=0;
         try {
             if(config.ContainsKey("leaseHome")) {
                 lease=new NativeHomeLease((string)config["leaseHome"]);
                 operationJournal=new NativeReceiptJournal(lease,session);
+                recoveredAcknowledgements=operationJournal.ReconcileCompletedAcknowledgements();
             }
             var values = EnvironmentFor(pipeName, session, home, nonce);
             values["MSYS"]="winsymlinks:nativestrict";
             if(config.ContainsKey("apiDry") && (bool)config["apiDry"]) values["FM_PROBE_API_DRY"]="1";
+            if(config.ContainsKey("ackFault")) {
+                string fault=(string)config["ackFault"];
+                if(!values.ContainsKey("FM_PROBE_API_DRY") || (fault!="partial" && fault!="complete")) throw new ArgumentException("Fault injection is limited to the model-free fixture");
+                values["FM_PROBE_ACK_FAULT"]=fault;
+            }
             if(lease!=null) { values["FM_PROBE_LEASE_HOME"]=lease.Home; values["FM_PROBE_LEASE_GENERATION"]=session; values["FM_HOME"]=lease.Home.Replace('\\','/'); }
             if(config.ContainsKey("ownerExercise") && (bool)config["ownerExercise"]) values["FM_PROBE_EXERCISE"]="1";
             if(config.ContainsKey("boundaries") && (bool)config["boundaries"]) values["FM_PROBE_BOUNDARIES"]="1";
@@ -247,6 +256,7 @@ public static partial class NativeOwner {
                 {"rootExit",code},{"timedOut",timedOut},{"jobAssigned",assigned},{"pipeAcl",pipeAcl},
                 {"probeGeneration",session},{"probeLeaseHeld",lease!=null},
                 {"pipeDacl",security.GetSecurityDescriptorSddlForm(AccessControlSections.Access)},
+                {"recoveredAcknowledgements",recoveredAcknowledgements},{"receiptNeedsReconciliation",operationJournal!=null && operationJournal.NeedsReconciliation},
                 {"authorityImplemented",false},{"notificationCheckStarts",checkStarts},{"notificationAckStarts",ackStarts},{"notificationConsumed",consumed},{"observations",observations}
             };
             if (outsider != null) {
@@ -277,6 +287,14 @@ public static partial class NativeOwner {
         bool allowed=lease!=null && (string)verdict["association"]=="associated" && (string)verdict["hostClassification"]=="registered-primary";
         verdict["notificationAuthorized"]=allowed;
         if(!allowed) return;
+        string action=request.ContainsKey("action") ? (string)request["action"] : "";
+        if(action=="shutdown") {
+            shutdownRequested=true;
+            foreach(var scope in scopes) if(scope.role=="owner-operation") NativeOperationLifetime.Stop(scope.job,1500);
+            verdict["operationState"]="stopped";
+            return;
+        }
+        if(shutdownRequested) { verdict["operationState"]="stopped";return; }
         bool ready=true;
         foreach(var scope in scopes) if(scope.purpose=="startup" && WaitForSingleObject(scope.process.process,0)==WAIT_TIMEOUT) ready=false;
         verdict["startupExpired"]=ready;
@@ -292,9 +310,8 @@ public static partial class NativeOwner {
             } else { operationJournal.CompleteAcknowledgement(receipt);consumed=true; }
             pendingOperation=null;
         }
-        string action=request.ContainsKey("action") ? (string)request["action"] : "";
         if(action=="result") {
-            verdict["operationState"]=pendingOperation!=null ? "pending" : consumed ? "acknowledged" : delivered!=null ? "delivered" : "idle";
+            verdict["operationState"]=pendingOperation!=null ? "pending" : operationJournal.NeedsReconciliation ? "reconciliation-required" : consumed ? "acknowledged" : delivered!=null ? "delivered" : "idle";
             if(delivered!=null) verdict["notification"]=delivered;
             return;
         }
@@ -302,7 +319,8 @@ public static partial class NativeOwner {
         if(operationJournal.NeedsReconciliation) { verdict["operationState"]="reconciliation-required";return; }
         if(action=="check" && (delivered==null || consumed)) checkStarts++;
         else if(action=="ack" && delivered!=null && !consumed && request.ContainsKey("receipt") && (string)request["receipt"]==receipt && request.ContainsKey("observed") && (string)request["observed"]==(string)delivered["challenge"]) {
-            var acknowledged=operationJournal.BeginAcknowledgement(receipt,(string)request["observed"]);
+            var targetEvidence=NativeAcknowledgementEvidence.Capture(lease,delivered);
+            var acknowledged=operationJournal.BeginAcknowledgement(receipt,(string)request["observed"],targetEvidence);
             ackStarts++;
             File.WriteAllText(Path.Combine(home,"notification-ack-request.json"),Json.Serialize(acknowledged));
         } else { verdict["operationState"]="denied"; return; }
@@ -313,7 +331,7 @@ public static partial class NativeOwner {
     }
     public static int Main(string[] args) {
         try {
-            if(args.Length==1 && args[0]=="receipt-tests") return ReceiptTests.Run();
+            if(args.Length==1 && args[0]=="receipt-tests") { ReceiptTests.Run();return TestOperationLifetime(); }
             if(args.Length>=3 && args[0]=="owner") return OwnerClient(args[1],args[2],args.Length>3 ? args[3] : "");
             if(args.Length>0 && args[0]=="client") return Client(args.Length>1 ? args[1] : "agent-tool");
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }

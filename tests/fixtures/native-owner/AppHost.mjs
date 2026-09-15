@@ -1,6 +1,7 @@
 // Disposable host adapter. Only this process owns the app-server connection.
 // Dynamic tool arguments never select a thread, executable, home, or command.
 import {createNotificationGate} from './codex-tool-gate.mjs';
+import {createHostLifecycle} from './host-lifecycle.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -12,16 +13,18 @@ const evidence={frames:[],tools:[],native:[],primary:null,foreign:null,passed:fa
 const save=()=>fs.writeFileSync(path.join(home,'app-host-evidence.json'),JSON.stringify(evidence,null,2));
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const base={kind:'notification',session:process.env.FM_PROBE_SESSION,home,nonce:process.env.FM_PROBE_NONCE};
-async function native(action,extra={}) {
+async function native(action,extra={},signal) {
  const until=Date.now()+12000;
  for(;;) {
+  if(signal?.aborted)throw Error('Native request cancelled');
   try {
    const result=await new Promise((resolve,reject)=>{
     const socket=net.createConnection('\\\\.\\pipe\\'+process.env.FM_PROBE_PIPE);let buffer='',done=false;
     socket.setTimeout(9000,()=>socket.destroy(Error('Native operation query timed out')));
     socket.on('connect',()=>socket.write(JSON.stringify({...base,action,...extra})+'\n'));
     socket.on('data',chunk=>{buffer+=chunk;const end=buffer.indexOf('\n');if(end>=0&&!done){done=true;try{resolve(JSON.parse(buffer.slice(0,end)));}catch(error){reject(error);}socket.end();}});
-    socket.on('error',reject);socket.on('close',()=>{if(!done)reject(Error('Native channel closed without a result'));});
+    const abort=()=>socket.destroy(Error('Native request cancelled'));signal?.addEventListener('abort',abort,{once:true});
+    socket.on('error',reject);socket.on('close',()=>{signal?.removeEventListener('abort',abort);if(!done)reject(Error('Native channel closed without a result'));});
    });
    if(!result.notificationAuthorized)throw Error('Native controller denied host adapter');
    evidence.native.push({action,state:result.operationState,startupExpired:result.startupExpired});
@@ -33,7 +36,13 @@ async function operation(action,extra={}) {
  const start=await native(action,extra);
  if(start.operationState!=='pending')throw Error('Operation did not start: '+start.operationState);
  for(let i=0;i<700;i++) {
-  await pause(100);const result=await native('result');
+  await pause(100);
+  if(action==='ack'&&process.env.FM_PROBE_ACK_FAULT&&fs.existsSync(path.join(home,'ack-fault-ready'))) {
+   const stopped=await native('shutdown');
+   if(stopped.operationState!=='stopped')throw Error('Interrupted operation did not stop');
+   return {operationState:'interrupted'};
+  }
+  const result=await native('result');
   if(result.operationState==='failed')throw Error('Native notification command failed');
   if(result.operationState!=='pending')return result;
  }
@@ -41,7 +50,7 @@ async function operation(action,extra={}) {
 }
 const child=spawn(executable,['app-server','--stdio','--disable','hooks','-c','windows.sandbox=unelevated','-c','model_reasoning_effort=high'],{cwd:home,stdio:['pipe','pipe','pipe']});
 let alive=true,next=0,stderr='',primary=null,receipt=null,challenge=null,acknowledged=false;
-let gate=null;
+let gate=null,activeTurn=null,closing=false;
 const pending=new Map(),completed=new Map();
 const failPending=error=>{for(const value of pending.values())value.reject(error);pending.clear();};
 const timer=setTimeout(()=>{child.kill();process.exitCode=1;},220000);
@@ -54,7 +63,7 @@ async function tool(frame) {
  const p=frame.params;
  const record={requestId:frame.id,threadId:p.threadId,turnId:p.turnId,callId:p.callId,tool:p.tool,arguments:p.arguments};
  evidence.tools.push(record);
- const respond=(success,value)=>{record.success=success;record.result=value;send({id:frame.id,result:{success,contentItems:[{type:'inputText',text:JSON.stringify(value)}]}});save();};
+ const respond=(success,value)=>{record.success=success;record.result=value;if(!closing&&alive)send({id:frame.id,result:{success,contentItems:[{type:'inputText',text:JSON.stringify(value)}]}});save();};
  if(!gate)return respond(false,{denied:'primary-not-registered'});
  const result=await gate.handle(p);
  if(result.success&&p.tool==='fm_notification_check'){receipt=result.value.receipt;challenge=result.value.challenge;}
@@ -68,9 +77,9 @@ createInterface({input:child.stdout}).on('line',line=>{
  if(event.id!==undefined&&pending.has(event.id)) {
   const value=pending.get(event.id);pending.delete(event.id);
   if(event.error)value.reject(Error(JSON.stringify(event.error)));
-  else {if(value.method==='turn/start'&&value.params.threadId===primary)gate.beginTurn(primary,event.result.turn.id);value.resolve(event.result);}
- } else if(event.method==='turn/completed'){completed.set(event.params.turn.id,event.params.turn);gate?.endTurn(event.params.threadId,event.params.turn.id);}
- else if(event.id!==undefined)send({id:event.id,error:{code:-32601,message:'No other host operations are authorized'}});
+  else {if(value.method==='turn/start'&&value.params.threadId===primary){gate.beginTurn(primary,event.result.turn.id);activeTurn=event.result.turn.id;}value.resolve(event.result);}
+ } else if(event.method==='turn/completed'){completed.set(event.params.turn.id,event.params.turn);gate?.endTurn(event.params.threadId,event.params.turn.id);if(event.params.turn.id===activeTurn)activeTurn=null;}
+ else if(event.id!==undefined&&event.method)send({id:event.id,error:{code:-32601,message:'No other host operations are authorized'}});
 });
 const tools=[
  {name:'fm_notification_check',description:'Read exactly one controlled notification through the registered Firstmate operation.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
@@ -94,10 +103,15 @@ try {
  if(process.env.FM_PROBE_API_DRY==='1') {
   const delivery=await operation('check');
   const ack=await operation('ack',{receipt:delivery.notification.receipt,observed:delivery.notification.challenge});
-  const replay=await native('ack',{receipt:delivery.notification.receipt,observed:delivery.notification.challenge});
-  if(ack.operationState!=='acknowledged'||replay.operationState!=='denied')throw Error('Native bridge preflight failed');
+  if(process.env.FM_PROBE_ACK_FAULT) {
+   if(ack.operationState!=='interrupted')throw Error('Fault injection did not interrupt the acknowledgement');
+   evidence.ackFault=process.env.FM_PROBE_ACK_FAULT;
+  } else {
+   const replay=await native('ack',{receipt:delivery.notification.receipt,observed:delivery.notification.challenge});
+   if(ack.operationState!=='acknowledged'||replay.operationState!=='denied')throw Error('Native bridge preflight failed');
+  }
   evidence.passed=true;evidence.modelFree=true;
-  console.log('PASS: registered post-startup operations deliver and acknowledge using the native bridge; model-free only.');
+  console.log(evidence.ackFault?'PASS: fixed acknowledgement interrupted at the requested durable boundary; model-free only.':'PASS: registered post-startup operations deliver and acknowledge using the native bridge; model-free only.');
  } else {
  evidence.primaryTurn=await turn(primary,'This is a bounded integration test in an empty disposable Firstmate home. Use only the supplied fm_notification tools; do not use shell, file, browser, or other tools. Call fm_notification_check once. Read the message, then call fm_notification_ack with its receipt and the observed challenge. After successful acknowledgement, repeat that same acknowledgement exactly once to test replay rejection. Report the three results and stop. Do not retry anything else.');
  if(!acknowledged)throw Error('Primary did not acknowledge notification');
@@ -114,6 +128,17 @@ try {
  console.log('PASS: primary received and acknowledged the notification; receipt replay and a second real thread were denied.');
  }
 } catch(error) {evidence.fatal=error.stack;process.exitCode=1;console.error(error.stack);} finally {
- save();fs.writeFileSync(path.join(home,'app-server.stderr'),stderr);child.stdin.end();
- const closeTimer=setTimeout(()=>child.kill(),3000);child.once('exit',()=>{clearTimeout(closeTimer);clearTimeout(timer);});if(!alive){clearTimeout(closeTimer);clearTimeout(timer);}
+ closing=true;
+ const lifecycle=createHostLifecycle({
+  gate:{close:()=>gate?.close()},
+  interrupt:()=>{if(activeTurn&&alive)void request('turn/interrupt',{threadId:primary,turnId:activeTurn}).catch(()=>{});},
+  stopOperations:async signal=>(await native('shutdown',{},signal)).operationState==='stopped',
+  closeInput:()=>child.stdin.end(),
+  waitForExit:signal=>!alive?Promise.resolve(true):new Promise(resolve=>{const stop=()=>{child.removeListener('exit',exit);resolve(false);};const exit=()=>{signal.removeEventListener('abort',stop);resolve(true);};child.once('exit',exit);signal.addEventListener('abort',stop,{once:true});}),
+  terminate:()=>child.kill(),graceMs:5000,
+ });
+ evidence.shutdown=await lifecycle.shutdown();
+ if(!evidence.shutdown.stopped){evidence.passed=false;process.exitCode=1;}
+ clearTimeout(timer);
+ save();fs.writeFileSync(path.join(home,'app-server.stderr'),stderr);
 }

@@ -19,7 +19,10 @@ bin/fm-sessionstart-run.sh --source startup > "$LOG/startup.log" 2>&1
 fm_session_lock_owned_by_self "$FM_HOME/state"
 identity=$(<"$FM_HOME/state/.lock")
 [ "$(<"$FM_HOME/state/.session-start-complete")" = "$identity" ]
-! grep -q 'READ-ONLY SESSION\|SESSION START INCOMPLETE' "$LOG/startup.log"
+if grep -q 'READ-ONLY SESSION\|SESSION START INCOMPLETE' "$LOG/startup.log"; then
+  printf 'Startup did not complete with ownership\n' >&2
+  exit 1
+fi
 printf 'STARTUP_COMPLETION_PASS\n'
 # Observe the real detached worker; do not reimplement or invoke its work twice.
 for ((i=0; i<150; i++)); do

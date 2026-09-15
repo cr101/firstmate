@@ -73,23 +73,40 @@ public sealed class NativeReceiptJournal : IDisposable {
     Dictionary<string,object> Delivery(Dictionary<string,object> row) {
         var result=Copy((Dictionary<string,object>)row["payload"]);result["receipt"]=row["receipt"];return result;
     }
-    public Dictionary<string,object> BeginAcknowledgement(string receipt,string observed) {
+    public Dictionary<string,object> BeginAcknowledgement(string receipt,string observed,NativeAcknowledgementEvidence evidence=null) {
         EnsureOpen();
         Dictionary<string,object> row;
         if(NeedsReconciliation || receipt==null || !receipts.TryGetValue(receipt,out row) || (string)row["generation"]!=generation || (string)row["event"]!="presented") throw new InvalidOperationException("Receipt is not eligible");
         var payload=(Dictionary<string,object>)row["payload"];
         if((string)payload["challenge"]!=observed) throw new InvalidOperationException("Notification was not observed");
-        Append("ack-started",receipt,Copy(payload));
+        if(evidence!=null && !object.ReferenceEquals(evidence.Lease,lease)) throw new InvalidOperationException("Evidence belongs to another home lease");
+        Append("ack-started",receipt,Copy(payload),evidence==null ? null : evidence.Record());
         return Delivery(receipts[receipt]);
     }
     public void CompleteAcknowledgement(string receipt) {
         EnsureOpen();
         Dictionary<string,object> row;
         if(receipt==null || !receipts.TryGetValue(receipt,out row) || (string)row["generation"]!=generation || (string)row["event"]!="ack-started") throw new InvalidOperationException("No matching acknowledgement attempt");
-        Append("acknowledged",receipt,Copy((Dictionary<string,object>)row["payload"]));
+        Append("acknowledged",receipt,Copy((Dictionary<string,object>)row["payload"]),Evidence(row));
     }
-    void Append(string kind,string receipt,Dictionary<string,object> payload) {
-        var row=new Dictionary<string,object>{{"version",1},{"home",home},{"generation",generation},{"event",kind},{"receipt",receipt},{"payload",payload}};
+    static Dictionary<string,object> Evidence(Dictionary<string,object> row) {
+        object value;return row.TryGetValue("targetEvidence",out value) ? value as Dictionary<string,object> : null;
+    }
+    public int ReconcileCompletedAcknowledgements() {
+        EnsureOpen();
+        var pending=new List<string>();
+        foreach(var entry in receipts) if((string)entry.Value["event"]=="ack-started") pending.Add(entry.Key);
+        int completed=0;
+        foreach(string id in pending) {
+            var previous=receipts[id];var evidence=Evidence(previous);
+            if(!NativeAcknowledgementEvidence.Completed(lease,evidence)) continue;
+            Append("recovered-acknowledged",id,Copy((Dictionary<string,object>)previous["payload"]),evidence,(string)previous["generation"]);
+            completed++;
+        }
+        return completed;
+    }
+    void Append(string kind,string receipt,Dictionary<string,object> payload,Dictionary<string,object> evidence=null,string ackGeneration=null) {
+        var row=new Dictionary<string,object>{{"version",1},{"home",home},{"generation",generation},{"event",kind},{"receipt",receipt},{"payload",payload},{"targetEvidence",evidence},{"ackGeneration",ackGeneration}};
         byte[] bytes=new UTF8Encoding(false,true).GetBytes(json.Serialize(row)+"\n");
         if(bytes.Length>65536 || file.Length+bytes.Length>Limit) throw new IOException("Receipt journal capacity exceeded; durable work preserved");
         try { file.Position=file.Length;file.Write(bytes,0,bytes.Length);file.Flush(true);Apply(row); }
@@ -108,6 +125,9 @@ public sealed class NativeReceiptJournal : IDisposable {
         else if(kind=="ack-started" || kind=="acknowledged") {
             string expected=kind=="ack-started" ? "presented" : "ack-started";
             if(!exists || (string)previous["event"]!=expected || (string)previous["generation"]!=gen || json.Serialize(previous["payload"])!=json.Serialize(row["payload"])) throw new IOException("Invalid receipt transition; preserved");
+            if(kind=="acknowledged" && json.Serialize(Evidence(previous))!=json.Serialize(Evidence(row))) throw new IOException("Acknowledgement evidence changed; preserved");
+        } else if(kind=="recovered-acknowledged") {
+            if(!exists || (string)previous["event"]!="ack-started" || !row.ContainsKey("ackGeneration") || (string)row["ackGeneration"]!=(string)previous["generation"] || json.Serialize(previous["payload"])!=json.Serialize(row["payload"]) || Evidence(row)==null || json.Serialize(Evidence(previous))!=json.Serialize(Evidence(row))) throw new IOException("Invalid recovery transition; preserved");
         } else throw new IOException("Unknown receipt transition; preserved");
         receipts[id]=row;
     }

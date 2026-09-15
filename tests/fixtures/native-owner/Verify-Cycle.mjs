@@ -14,6 +14,7 @@ const build=read(path.join(home,'build.json'));
 const host=read(path.join(home,'app-host-evidence.json'));
 const native=read(path.join(home,'result.json'));
 assert.equal(latest.exit,0);assert.equal(native.rootExit,0);assert.equal(host.passed,true);
+assert.deepEqual(host.shutdown,{stopped:true,operationsStopped:true,exited:true,forced:false,errors:[]});
 assert.notEqual(host.primary,host.foreign);assert.equal(host.tools.length,4);
 const requests=host.frames.filter(frame=>frame.method==='item/tool/call');
 assert.equal(requests.length,4);
@@ -43,7 +44,13 @@ assert.ok(fs.readFileSync(path.join(home,'cycle-delivery.log'),'utf8').includes(
 assert.equal(read(path.join(home,'notification-ack.json')).acknowledged,true);
 const operational=path.join(home,'home','state');
 assert.equal(fs.readFileSync(path.join(operational,'.wake-queue'),'utf8').trim(),'');
-assert.ok(fs.existsSync(path.join(operational,'inbox/handled',delivered.note+'.note')));
+const handled=path.join(operational,'inbox/handled',delivered.note+'.note');
+assert.ok(fs.existsSync(handled));
+const targets=journal[2].targetEvidence;
+assert.equal(targets.note,delivered.note);assert.equal(targets.cutoff,delivered.seq);
+assert.equal(targets.noteSha256,hash(handled));
+assert.ok(targets.rows.some(row=>row.split('\t')[3]===`inbox:${delivered.note}`));
+assert.deepEqual(journal[3].targetEvidence,targets);
 const threads=host.frames.filter(frame=>frame.result?.thread);
 assert.equal(threads.length,2);
 for(const thread of threads){assert.equal(thread.result.sandbox.type,'readOnly');assert.equal(thread.result.sandbox.networkAccess,false);assert.equal(thread.result.approvalPolicy,'never');}
@@ -53,5 +60,5 @@ if(!fs.existsSync(archive)) {
  fs.cpSync(home,path.join(archive,'live'),{recursive:true});
 }
 
-fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,durableAcknowledgement:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.root,'codex-tool-gate.mjs'))},null,2));
+fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,durableAcknowledgement:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.root,'codex-tool-gate.mjs')),lifecycleHash:hash(path.join(build.root,'host-lifecycle.mjs')),confirmedShutdown:host.shutdown},null,2));
 console.log('PASS: consolidated candidate protocol, ownership, and durable acknowledgement evidence.');
