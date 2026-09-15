@@ -1,0 +1,27 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+import {randomUUID,createHash} from 'node:crypto';
+const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
+const dir=path.join(repo,'data/native-candidate-validation');
+const read=file=>JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));
+const build=read(path.join(dir,'build.json'));
+const dry=process.argv.includes('--dry');
+if(!dry&&process.env.FM_LIVE_NATIVE_CODEX!=='1')throw Error('Live model test requires FM_LIVE_NATIVE_CODEX=1');
+if(!dry){const preflight=read(path.join(dir,'bridge-preflight.json'));if(!preflight.passed||preflight.binaryHash!==createHash('sha256').update(fs.readFileSync(build.binary)).digest('hex'))throw Error('Run model-free bridge preflight for this binary first');}
+const home=path.join(build.root,'appserver-'+randomUUID());fs.mkdirSync(home);
+const script=path.join(build.root,'AppHost.mjs');
+const spec={home,leaseHome:path.join(home,'home'),executable:process.execPath,arguments:'"'+script+'"',registeredHarness:'codex-app-server',timeoutSeconds:280,ownerExercise:true,ownerOperation:true,pipeAcl:'UserOnly',apiDry:dry};
+const file=path.join(home,'spec.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));
+const run=spawnSync(build.binary,['run',file],{encoding:'utf8',timeout:310000});
+fs.writeFileSync(path.join(home,'controller.stdout'),run.stdout||'');fs.writeFileSync(path.join(home,'controller.stderr'),run.stderr||'');
+fs.writeFileSync(path.join(dir,dry?'bridge-latest.json':'cycle-latest.json'),JSON.stringify({home,exit:run.status},null,2));
+console.log(JSON.stringify({home,exit:run.status,dry}));
+if(run.status!==0)throw Error('Bounded app-server run failed; inspect evidence, do not start another model attempt');
+const host=read(path.join(home,'app-host-evidence.json')),native=read(path.join(home,'result.json'));
+if(!host.passed||native.notificationCheckStarts!==1||native.notificationAckStarts!==1||!native.notificationConsumed)throw Error('Notification cycle incomplete');
+if(!host.native.filter(row=>row.action==='check'||row.action==='ack').every(row=>row.startupExpired))throw Error('Startup scope still active');
+if(fs.existsSync(path.join(spec.leaseHome,'state/.wake-queue'))&&fs.readFileSync(path.join(spec.leaseHome,'state/.wake-queue'),'utf8').trim())throw Error('Queue was not acknowledged');
+if(dry)fs.writeFileSync(path.join(dir,'bridge-preflight.json'),JSON.stringify({passed:true,home,binaryHash:createHash('sha256').update(fs.readFileSync(build.binary)).digest('hex')},null,2));
+console.log(dry?'PASS: model-free registered operation bridge.':'PASS: real app-server notification cycle, handling, acknowledgement, replay refusal, and foreign-thread denial.');

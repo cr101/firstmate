@@ -6,6 +6,41 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Experimental native Windows ownership candidate
+
+Verified on 2026-09-15 with Codex app-server 0.154.0, Windows 10.0.26200 x86_64, and the saved unelevated Windows sandbox.
+This is an isolated candidate verification, not an installed runtime backend or a claim that ordinary Codex shell tools can run Git Bash in that sandbox.
+The native ownership core and Codex request policy live under `bin/native-owner/`; launchers, controlled messages, model prompts, Docker jq, and the temporary consumer integration patch remain test-only under `tests/fixtures/native-owner/`.
+The home reservation deliberately still rejects non-temporary homes, and normal Firstmate startup does not load the candidate.
+
+Refresh the portable request-policy regression with:
+
+```sh
+bash tests/fm-native-owner-tool-gate.test.sh
+```
+
+The 17 behavioral cases cover primary-thread/turn binding, duplicate calls, consumed receipts, invalid arguments, arbitrary-command rejection, dead connections, overlapping calls, late delivery, and operation failure without blind retry.
+Refresh the actual Windows integration with the explicit two-model-turn guard:
+
+```sh
+FM_LIVE_NATIVE_CODEX=1 bash tests/fm-native-owner-codex-live-e2e.test.sh
+```
+
+Observed terminal results:
+
+```text
+PASS: model-free registered operation bridge.
+PASS: real app-server notification cycle, handling, acknowledgement, replay refusal, and foreign-thread denial.
+```
+
+The actual primary thread read and acknowledged one controlled inbox notification after the startup operation expired.
+A new fixed operation performed each check and acknowledgement through unchanged Firstmate command owners; the queue became empty and the note moved to handled.
+A repeated receipt and a request from another real thread were refused without another native operation.
+The checkpoint exercised its three-second timeout followed by a drain, not immediate interrupt-driven delivery.
+Both app-server threads reported read-only filesystem policy, disabled network access, and approval policy `never`; the two explicitly authorized host operations execute outside ordinary model shell tools.
+Dynamic tool registration requires the experimental API capability in this version.
+This does not establish persistent receipt recovery, cancellation of an already accepted mutation, adversarial Windows path/process races, populated-fleet behavior, or other harness support.
+
 ## Harness detection precedence
 
 Firstmate's own harness comes from two kinds of evidence, and `bin/fm-harness.sh` owns how they combine: an environment marker names its harness, and the nearest harness process in the parent chain proves who owns the process tree.

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Explicitly opt-in, two-turn Codex test of the consolidated native core.
+# Uses a disposable home only; no sandbox changes or provider installation.
+set -eu
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+fm_live_gate opt-in FM_LIVE_NATIVE_CODEX node powershell.exe codex docker
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) ;;
+  *) printf '%s\n' 'Native Codex ownership test requires Windows' >&2; exit 1 ;;
+esac
+export FM_LIVE_NATIVE_CODEX=1
+fixture="$ROOT/tests/fixtures/native-owner"
+powershell.exe -NoProfile -NonInteractive -File "$(cygpath -w "$fixture/Build.ps1")"
+node "$fixture/Run-Cycle.mjs" --dry
+node "$fixture/Run-Cycle.mjs"
+node "$fixture/Verify-Cycle.mjs"

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# jq stays in the existing Docker image. Only this disposable build is mounted.
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+exec env MSYS2_ARG_CONV_EXCL='*' 'C:/Program Files/Docker/Docker/resources/bin/docker.exe' run --rm -i \
+  --mount "type=bind,source=$(cygpath -m "$root"),target=$root,readonly" \
+  --workdir "$root" firstmate-pr3553-validation:tools-v1 jq "$@"

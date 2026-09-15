@@ -1,0 +1,91 @@
+// Request policy for a controller-owned Codex app-server connection.
+// The host supplies protocol-envelope identity and a fixed operation adapter;
+// model arguments never select a process, command, home, or thread.
+export function createNotificationGate({ primaryThread, operate, isAlive }) {
+  if (typeof primaryThread !== 'string' || !primaryThread ||
+      typeof operate !== 'function' || typeof isAlive !== 'function') {
+    throw new TypeError('A primary thread, operation adapter, and liveness source are required');
+  }
+  let activeTurn = null;
+  let closed = false;
+  let busy = false;
+  let receipt = null;
+  let challenge = null;
+  let acknowledged = false;
+  const seen = new Set();
+  const deny = reason => ({ success: false, value: { denied: reason } });
+  const valid = params => !closed && isAlive() && params.threadId === primaryThread &&
+    typeof params.turnId === 'string' && params.turnId === activeTurn;
+
+  return Object.freeze({
+    beginTurn(thread, turn) {
+      if (closed || thread !== primaryThread || typeof turn !== 'string' || !turn || activeTurn) {
+        throw new Error('Cannot register this turn');
+      }
+      activeTurn = turn;
+    },
+    endTurn(thread, turn) {
+      if (thread === primaryThread && turn === activeTurn) activeTurn = null;
+    },
+    close() {
+      closed = true;
+      activeTurn = null;
+    },
+    async handle(params) {
+      if (!params || !valid(params) || typeof params.callId !== 'string' || !params.callId) {
+        return deny('wrong-thread-turn-or-replay');
+      }
+      const key = JSON.stringify([params.threadId, params.turnId, params.callId]);
+      if (seen.has(key)) return deny('wrong-thread-turn-or-replay');
+      seen.add(key);
+      if (params.namespace != null) return deny('unexpected-namespace');
+      const args = params.arguments;
+      if (!args || Array.isArray(args) || typeof args !== 'object') return deny('invalid-arguments');
+      if (busy) return deny('operation-in-progress');
+
+      if (params.tool === 'fm_notification_check') {
+        if (Object.keys(args).length || receipt) return deny('check-already-used-or-invalid-arguments');
+      } else if (params.tool === 'fm_notification_ack') {
+        if (Object.keys(args).sort().join(',') !== 'observed,receipt' || !receipt ||
+            args.receipt !== receipt || args.observed !== challenge) {
+          return deny('wrong-receipt-or-unhandled-notification');
+        }
+        if (acknowledged) return deny('receipt-already-consumed');
+      } else {
+        return deny('unknown-tool');
+      }
+
+      busy = true;
+      try {
+        if (params.tool === 'fm_notification_check') {
+          const result = await operate('check');
+          const note = result?.notification;
+          if (result?.operationState !== 'delivered' || !note ||
+              typeof note.receipt !== 'string' || !note.receipt ||
+              typeof note.challenge !== 'string' || !note.challenge ||
+              typeof note.message !== 'string') {
+            throw new Error('Missing notification delivery');
+          }
+          receipt = note.receipt;
+          challenge = note.challenge;
+          if (!valid(params)) return deny('wrong-thread-turn-or-replay');
+          return { success: true, value: {
+            message: note.message, receipt, challenge, checkpointExit: note.checkpointExit,
+          } };
+        }
+        const result = await operate('ack', { receipt, observed: args.observed });
+        if (result?.operationState !== 'acknowledged') throw new Error('Acknowledgement did not complete');
+        acknowledged = true;
+        if (!valid(params)) return deny('wrong-thread-turn-or-replay');
+        return { success: true, value: { acknowledged: true } };
+      } catch (error) {
+        // A failed mutation may have partially completed. Never retry it based
+        // on a missing response or manufacture a success; retain durable work.
+        closed = true;
+        return { success: false, value: { error: error.message } };
+      } finally {
+        busy = false;
+      }
+    },
+  });
+}
