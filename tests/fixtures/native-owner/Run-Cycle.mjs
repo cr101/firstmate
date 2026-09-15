@@ -11,6 +11,7 @@ const dry=process.argv.includes('--dry');
 if(!dry&&process.env.FM_LIVE_NATIVE_CODEX!=='1')throw Error('Live model test requires FM_LIVE_NATIVE_CODEX=1');
 if(!dry){const preflight=read(path.join(dir,'bridge-preflight.json'));if(!preflight.passed||preflight.binaryHash!==createHash('sha256').update(fs.readFileSync(build.binary)).digest('hex'))throw Error('Run model-free bridge preflight for this binary first');}
 const home=path.join(build.root,'appserver-'+randomUUID());fs.mkdirSync(home);
+fs.writeFileSync(path.join(home,'build.json'),JSON.stringify(build,null,2));
 const script=path.join(build.root,'AppHost.mjs');
 const spec={home,leaseHome:path.join(home,'home'),executable:process.execPath,arguments:'"'+script+'"',registeredHarness:'codex-app-server',timeoutSeconds:280,ownerExercise:true,ownerOperation:true,pipeAcl:'UserOnly',apiDry:dry};
 const file=path.join(home,'spec.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));

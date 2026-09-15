@@ -8,9 +8,9 @@ const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..')
 const state=path.join(repo,'data/native-candidate-validation');
 const read=file=>JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));
 const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-const build=read(path.join(state,'build.json'));
 const latest=read(path.join(state,'cycle-latest.json'));
 const home=latest.home;
+const build=read(path.join(home,'build.json'));
 const host=read(path.join(home,'app-host-evidence.json'));
 const native=read(path.join(home,'result.json'));
 assert.equal(latest.exit,0);assert.equal(native.rootExit,0);assert.equal(host.passed,true);
@@ -40,9 +40,11 @@ assert.ok(fs.existsSync(path.join(operational,'inbox/handled',delivered.note+'.n
 const threads=host.frames.filter(frame=>frame.result?.thread);
 assert.equal(threads.length,2);
 for(const thread of threads){assert.equal(thread.result.sandbox.type,'readOnly');assert.equal(thread.result.sandbox.networkAccess,false);assert.equal(thread.result.approvalPolicy,'never');}
-const archive=path.join(state,'evidence');fs.mkdirSync(archive,{recursive:true});
-fs.cpSync(home,path.join(archive,'live'),{recursive:true});
-fs.cpSync(path.join(repo,'bin/native-owner'),path.join(archive,'tested-core'),{recursive:true});
-fs.cpSync(path.join(repo,'tests/fixtures/native-owner'),path.join(archive,'tested-fixture'),{recursive:true});
+const archive=path.join(state,'evidence',path.basename(home));
+if(!fs.existsSync(archive)) {
+ fs.mkdirSync(archive,{recursive:true});
+ fs.cpSync(home,path.join(archive,'live'),{recursive:true});
+}
+
 fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.root,'codex-tool-gate.mjs'))},null,2));
 console.log('PASS: consolidated candidate protocol, ownership, and durable acknowledgement evidence.');
