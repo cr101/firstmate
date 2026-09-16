@@ -28,7 +28,7 @@ if(startupQueued){
  startupNote=queued.stdout.trim().split(/\s+/)[1];
  if(!startupNote)throw Error('Pre-startup note ID was not returned');
 }
-const spec={home,leaseHome,executable:process.execPath,arguments:'"'+script+'"',registeredHarness:'codex-app-server',timeoutSeconds:280,ownerExercise:true,ownerOperation:true,pipeAcl:'UserOnly',apiDry:dry,jqImage:process.env.FM_NATIVE_TEST_JQ_IMAGE};
+const spec={home,leaseHome,executable:process.execPath,arguments:'"'+script+'"',registeredHarness:'codex-app-server',timeoutSeconds:280,ownerExercise:true,ownerOperation:true,pipeAcl:'LogonData',apiDry:dry,jqImage:process.env.FM_NATIVE_TEST_JQ_IMAGE};
 if(startupQueued){spec.startupQueued=true;spec.startupNote=startupNote;}
 if(fault)spec.ackFault=fault;
 const file=path.join(home,'spec.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));
@@ -40,7 +40,7 @@ if(run.status!==0)throw Error('Bounded app-server run failed; inspect evidence, 
 const host=read(path.join(home,'app-host-evidence.json')),native=read(path.join(home,'result.json'));
 if(!host.shutdown?.stopped||!host.shutdown.operationsStopped||!host.shutdown.exited)throw Error('Host shutdown was not confirmed');
 const starts=action=>host.native.filter(row=>row.action===action&&row.state==='pending').length;
-if(!host.passed||starts('check')!==1||starts('ack')!==1||native.notificationConsumed!==!fault)throw Error('Notification cycle incomplete');
+if(!host.passed||host.ordinaryToolRefusal?.restricted!==true||host.ordinaryToolRefusal?.association!=='associated'||host.ordinaryToolRefusal?.hostClassification!=='unclassified-descendant'||host.ordinaryToolRefusal?.protectedEffects!==false||host.ordinaryToolRefusal?.registeredPrimaryState!=='quiet'||starts('check')!==1||starts('ack')!==1||native.notificationConsumed!==!fault)throw Error('Notification cycle or ordinary-tool authority refusal incomplete');
 if(!host.native.filter(row=>(row.action==='check'||row.action==='ack')&&row.state==='pending').every(row=>row.startupExpired))throw Error('Startup scope still active');
 if(startupQueued){
  const delivered=read(path.join(home,'notification-check.json'));

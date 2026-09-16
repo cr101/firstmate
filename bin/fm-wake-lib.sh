@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # Shared durable wake queue and portable lock helpers.
+#
+# RECOVERY COMPLETION HISTORY. Before a current `acked:handling:<generation>` or
+# `acked:downtime:<generation>` marker is replaced, this library retains that
+# generation in `${marker}.ack-completions`. The file is newline-delimited: its
+# first line is exactly `fm-wake-ack-completions-v1`, followed by at most 1,024
+# unique generation lines, each 1-128 ASCII characters from `[A-Za-z0-9._-]`.
+# The complete file is bounded at 262,144 bytes and is never pruned
+# automatically. fm_recovery_marker_completed accepts either the matching
+# current acknowledged marker or a matching history row. A symlink, non-regular,
+# unreadable, oversized, malformed, duplicate, or full history makes completion
+# unresolved and prevents acknowledgement or marker replacement from erasing
+# the current proof.
 
 FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"

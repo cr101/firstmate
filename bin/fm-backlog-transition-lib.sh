@@ -55,6 +55,18 @@
 # closes a row that reads as an open captain call. An answer that closes the row
 # first applies any supported retained artifact from the validated record, then
 # replay simply retires the record.
+#
+# EMPTY-FLEET ADMISSION. fm_backlog_markdown_empty <backlog-file> accepts a
+# readable, non-symlink markdown file only when its nonblank LF or CRLF lines are
+# either `# Backlog` alone or the optional `# Backlog` title followed by the
+# `## In flight`, `## Queued`, and `## Done` empty section skeleton.
+# fm_backlog_empty_fleet_preflight <state-dir> <data-dir> additionally rejects
+# task, close-recovery, inbox, and handoff work records, requires the configured
+# backlog owner to resolve to markdown, and applies that semantic empty-file
+# check when the backlog exists. Both functions write nothing, return 0 only for
+# recognized empty state, and otherwise return non-zero with the refusal in
+# FM_BACKLOG_EMPTY_ERROR. Callers must source fm-tasks-axi-lib.sh first so backend
+# selection and configuration errors retain their owning contract.
 
 # Set by fm_backlog_transition_applies for a return-1 exemption.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -72,6 +84,8 @@ FM_BACKLOG_ROW_HOLD_KIND=
 # retained_incomplete | answered | stale | noop.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_CLOSE_REPLAY_RESULT=
+# Set by the empty-markdown and empty-fleet admission helpers when they refuse.
+# shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_EMPTY_ERROR=
 
 # Bounded execution is fm-timeout-lib.sh's alone; source it rather than

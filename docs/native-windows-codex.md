@@ -63,6 +63,7 @@ Only empty-fleet homes beneath the current user's Windows temporary directory ar
 Existing fleet metadata, projects, registrations, Relay configuration, process-event sources, non-temporary homes, and existing reparse-point ancestors are refused.
 The app-server thread is ephemeral, read-only, network-disabled, and approval-never; Apps, plugins, and configured MCP servers are disabled for this host and their effective catalogs are checked before readiness.
 Only controller-selected startup, notification check, and acknowledgement scripts receive registered native operation authority.
+The two notification tools are the model-facing path to those registered host operations, not the complete Codex tool catalog; ordinary tools cannot acquire native authority from the inherited endpoint, claims, callback identity, or session job.
 Those operations and their descendants are owned by the native session: deferred startup may outlive the digest shell but `/quit` cancels it without terminating independently owned workers, and unfinished startup may run again after restart.
 Interrupted or ambiguous acknowledgements remain preserved for evidence-based reconciliation and are never replayed or rolled back automatically.
 

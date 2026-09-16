@@ -33,13 +33,14 @@ public static partial class NativeOwner {
         string done=Path.Combine(home,"boundaries-done");
         if(!File.Exists(done)) File.WriteAllText(done,"complete");
     }
-    static int Client(string which) {
+    static int Client(string which, bool notificationProbe=false) {
         Console.WriteLine(Json.Serialize(TokenFacts()));
         var request = new Dictionary<string,object> {
             {"session",Environment.GetEnvironmentVariable("FM_PROBE_SESSION")},
             {"home",Environment.GetEnvironmentVariable("FM_PROBE_HOME")},
             {"nonce",Environment.GetEnvironmentVariable("FM_PROBE_NONCE")}, {"case",which}, {"claimedRole","primary"}
         };
+        if(notificationProbe) { request["kind"]="notification";request["action"]="check"; }
         if (which == "wrong-session") request["session"] = Guid.NewGuid().ToString("N");
         if (which == "wrong-home") request["home"] = "C:\\not-the-test-home";
         if (which == "wrong-capability") request["nonce"] = "copied-invalid-value";
@@ -344,6 +345,7 @@ public static partial class NativeOwner {
             if(args.Length==1 && args[0]=="receipt-tests") { ReceiptTests.Run();return TestOperationLifetime(); }
             if(args.Length==1 && args[0]=="environment-tests") return EnvironmentTests();
             if(TryOwnerCommand(args,out ownerResult)) return ownerResult;
+            if(args.Length==1 && args[0]=="privilege-probe") return Client("ordinary-sandbox-command",true);
             if(args.Length>0 && args[0]=="client") return Client(args.Length>1 ? args[1] : "agent-tool");
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }
             if(args.Length==2 && args[0]=="operation-parent") {

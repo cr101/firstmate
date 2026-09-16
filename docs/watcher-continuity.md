@@ -60,8 +60,7 @@ The acknowledgement retires the marker only when no rows remain after sequence-b
 A concurrently appended wake has a higher sequence, remains queued, and keeps the episode pending for presentation.
 Consequently, an empty-queue downtime publication during handling can be retired by the outstanding acknowledgement without a dedicated recovery turn.
 An acknowledged episode does not freeze the generation, because the next downtime after it opens an episode of its own.
-Before that later episode replaces an acknowledged marker, the wake owner retains the completed generation in the versioned newline-delimited `state/.watcher-down.ack-completions` owner record so restart reconciliation can still prove the earlier effect.
-The record retains at most 1,024 unique generations without automatic pruning; an unreadable, malformed, or full record prevents marker replacement and preserves the current proof instead of permitting new work to erase it.
+`bin/fm-wake-lib.sh`'s header owns the completion-history record used to prove an earlier acknowledged generation across later marker replacement, including its exact format, bounds, and refusal behavior.
 
 ## Per-actor acknowledgement
 

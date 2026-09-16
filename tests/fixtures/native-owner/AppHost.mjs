@@ -107,6 +107,21 @@ try {
  let ready=false;
  for(let i=0;i<1200;i++){const state=await native('result');if(state.startupExpired){ready=true;break;}await pause(100);}
  if(!ready||!fs.existsSync(path.join(home,'owner-operation.complete')))throw Error('Startup did not finish and expire');
+ const protectedFiles=[path.join(process.env.FM_HOME,'owner-receipts.jsonl'),path.join(process.env.FM_HOME,'state','.wake-queue')];
+ const protectedSnapshot=()=>protectedFiles.map(file=>fs.existsSync(file)?fs.readFileSync(file).toString('base64'):null);
+ const beforeOrdinaryTool=protectedSnapshot();
+ const ordinaryTool=await request('command/exec',{command:[process.env.FM_PROBE_EXE,'privilege-probe'],cwd:home,sandboxPolicy:{type:'readOnly',access:{type:'fullAccess'}},timeoutMs:10000});
+ if(ordinaryTool.exitCode!==0)throw Error('Ordinary sandbox command did not execute: '+ordinaryTool.stderr);
+ const ordinaryLines=ordinaryTool.stdout.trim().split(/\r?\n/).filter(Boolean);
+ if(ordinaryLines.length!==2)throw Error('Ordinary sandbox command returned unexpected evidence');
+ const ordinaryToken=JSON.parse(ordinaryLines[0]),ordinaryVerdict=JSON.parse(ordinaryLines[1]);
+ if(!Array.isArray(ordinaryToken.restricting)||ordinaryToken.restricting.length===0)throw Error('Command did not execute under the ordinary restricted sandbox token');
+ if(ordinaryVerdict.association!=='associated'||ordinaryVerdict.hostClassification!=='unclassified-descendant')throw Error('Ordinary sandbox command did not reach the controller with copied claims as a session descendant');
+ if(ordinaryVerdict.notificationAuthorized!==false||ordinaryVerdict.authorityGranted!==false)throw Error('Ordinary sandbox command acquired privileged host authority');
+ await pause(250);
+ const primaryControl=await native('result');
+ if(primaryControl.operationState!=='quiet'||JSON.stringify(protectedSnapshot())!==JSON.stringify(beforeOrdinaryTool))throw Error('Ordinary sandbox command caused a protected notification effect');
+ evidence.ordinaryToolRefusal={exitCode:ordinaryTool.exitCode,association:ordinaryVerdict.association,hostClassification:ordinaryVerdict.hostClassification,restricted:true,protectedEffects:false,registeredPrimaryState:primaryControl.operationState};save();
  const params={cwd:home,model:'gpt-5.6-terra',sandbox:'read-only',approvalPolicy:'never',ephemeral:true,dynamicTools:tools};
  const externalConfiguration=await verifyExternalToolConfiguration(request,mcpServerNames);
  primary=(await request('thread/start',params)).thread.id;evidence.primary=primary;
