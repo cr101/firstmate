@@ -76,9 +76,26 @@ test('a prohibited MCP capability on a later page is rejected',async()=>{
  assert.equal(calls.filter(call=>call.method==='mcpServerStatus/list').length,2);
 });
 
-test('server capabilities are required and only null is inactive',async()=>{
- const valid=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[inactiveMcpServer('alpha')],nextCursor:null}});
- assert.deepEqual((await verifyExternalToolIsolation(valid.request,'thread-1',isolatedConfiguration)).activeMcpServers,[]);
+test('supported runtime statuses have explicit activity semantics',async()=>{
+ const semantics=new Map([[null,false],['disabled',false],['notStarted',true],['starting',true],['connected',true],['authenticationRequired',true],['failed',true],['cancelled',true]]);
+ for(const [runtimeStatus,active] of semantics){
+  const boundary=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{...inactiveMcpServer(String(runtimeStatus)),runtimeStatus}],nextCursor:null}});
+  if(active)await assert.rejects(verifyExternalToolIsolation(boundary.request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
+  else assert.deepEqual((await verifyExternalToolIsolation(boundary.request,'thread-1',isolatedConfiguration)).activeMcpServers,[]);
+ }
+});
+
+test('disabled status is inactive only when the complete response exposes nothing',async()=>{
+ for(const exposed of [
+  {serverInfo:{}},{serverCapabilities:{}},{toolsError:'failed to enumerate'}, {tools:{read:{}}}, {resources:[{}]}, {resourceTemplates:[{}]},
+ ]){
+  const server={...inactiveMcpServer('disabled'),runtimeStatus:'disabled',...exposed};
+  const boundary=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[server],nextCursor:null}});
+  await assert.rejects(verifyExternalToolIsolation(boundary.request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
+ }
+});
+
+test('server capabilities are required',async()=>{
  const missing=inactiveMcpServer('missing');delete missing.serverCapabilities;
  const absent=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[missing],nextCursor:null}});
  await assert.rejects(verifyExternalToolIsolation(absent.request,'thread-1',isolatedConfiguration),/Invalid MCP server status response/);
@@ -104,6 +121,7 @@ test('malformed catalog responses are rejected',async()=>{
   {'app/installed':{apps:[{}]},'mcpServerStatus/list':{data:[],nextCursor:null}},
   {'app/installed':{apps:[]},'mcpServerStatus/list':{}},
   {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{}],nextCursor:null}},
+  {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{...inactiveMcpServer('future'),runtimeStatus:'future'}],nextCursor:null}},
   {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[],nextCursor:7}},
  ]) {
   const {request}=requestBoundary(responses);

@@ -10,8 +10,11 @@ $binary = Join-Path $root 'SessionProbe.exe'
 $sources = @((Join-Path $repo 'bin/native-owner/NativeOwner.cs'), (Join-Path $repo 'bin/native-owner/NativeHomeLease.cs'), (Join-Path $PSScriptRoot 'NativeDriver.cs'), (Join-Path $repo 'bin/native-owner/NativeReceiptJournal.cs'), (Join-Path $PSScriptRoot 'ReceiptTests.cs'))
 $sources += @((Join-Path $repo 'bin/native-owner/NativeOperations.cs'), (Join-Path $repo 'bin/native-owner/NativeAcknowledgementEvidence.cs'), (Join-Path $repo 'bin/native-owner/NativeOperationLifetime.cs'), (Join-Path $PSScriptRoot 'OperationLifetimeTests.cs'))
 Add-Type -Path $sources -OutputAssembly $binary -OutputType ConsoleApplication -ReferencedAssemblies System.dll,System.Core.dll,System.Web.Extensions.dll
+$env:FM_PROBE_CODE_ROOT = $repo
 & $binary receipt-tests
-if ($LASTEXITCODE -ne 0) { throw 'Durable receipt lifecycle tests failed' }
+$receiptExit = $LASTEXITCODE
+Remove-Item Env:FM_PROBE_CODE_ROOT
+if ($receiptExit -ne 0) { throw 'Durable receipt lifecycle tests failed' }
 & $binary environment-tests
 if ($LASTEXITCODE -ne 0) { throw 'Native environment filtering tests failed' }
 $invalidState = Join-Path $root 'missing-state'

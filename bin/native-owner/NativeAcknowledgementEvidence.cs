@@ -35,6 +35,16 @@ public sealed class NativeAcknowledgementEvidence {
         }
     }
     static string Hash(byte[] value) { using(var hash=SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(value)).Replace("-","").ToLowerInvariant(); }
+    static string RecoveryGeneration(Dictionary<string,object> payload) {
+        object value;
+        if(!payload.TryGetValue("generation",out value) || !(value is string) || !Regex.IsMatch((string)value,@"\A[A-Za-z0-9._-]+\z")) throw new IOException("Invalid recovery generation");
+        return (string)value;
+    }
+    static string RecoveryMarker(NativeHomeLease lease) {
+        string value=new UTF8Encoding(false,true).GetString(Read(lease.Home,Path.Combine("state",".watcher-down")));
+        if(!value.EndsWith("\n",StringComparison.Ordinal) || value.IndexOf('\n')!=value.Length-1) throw new IOException("Invalid recovery marker");
+        return value.Substring(0,value.Length-1);
+    }
     static List<string> Rows(byte[] bytes,ulong cutoff) {
         string text=new UTF8Encoding(false,true).GetString(bytes);
         if(text.Length>0 && !text.EndsWith("\n",StringComparison.Ordinal)) throw new IOException("Incomplete wake queue");
@@ -49,9 +59,9 @@ public sealed class NativeAcknowledgementEvidence {
     public static NativeAcknowledgementEvidence Capture(NativeHomeLease lease,Dictionary<string,object> payload) {
         if(lease==null || !lease.IsHeld) throw new InvalidOperationException("An active home lease is required");
         ulong cutoff;
-        if(!payload.ContainsKey("seq") || !(payload["seq"] is string) || !ulong.TryParse((string)payload["seq"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff) || cutoff==0) throw new IOException("Invalid wake cutoff");
-        var rows=Rows(Read(lease.Home,Path.Combine("state",".wake-queue")),cutoff);
-        if(rows.Count==0) throw new IOException("No queued targets remain");
+        if(!payload.ContainsKey("seq") || !(payload["seq"] is string) || !ulong.TryParse((string)payload["seq"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff)) throw new IOException("Invalid wake cutoff");
+        var queue=Read(lease.Home,Path.Combine("state",".wake-queue"));
+        var rows=Rows(queue,cutoff);
         var ids=new HashSet<string>();
         if(payload.ContainsKey("notes")) {
             var input=payload["notes"] as System.Collections.IList;
@@ -61,6 +71,13 @@ public sealed class NativeAcknowledgementEvidence {
         var queued=new HashSet<string>();
         foreach(string row in rows) {string key=row.Split('	')[3];if(key.StartsWith("inbox:",StringComparison.Ordinal))queued.Add(key.Substring(6));}
         if(!ids.SetEquals(queued))throw new IOException("Inbox targets differ from the captured queue");
+        if(cutoff==0) {
+            if(queue.Length!=0 || rows.Count!=0 || ids.Count!=0)throw new IOException("Invalid zero-row recovery target");
+            string generation=RecoveryGeneration(payload),marker=RecoveryMarker(lease);
+            if(marker!="pending:handling:"+generation && marker!="announced:handling:"+generation)throw new IOException("Recovery target differs from the captured generation");
+            return new NativeAcknowledgementEvidence(lease,new Dictionary<string,object>{{"version",3},{"notes",new object[0]},{"cutoff","0"},{"rows",new object[0]},{"recoveryGeneration",generation},{"recoveryMarker",marker}});
+        }
+        if(rows.Count==0) throw new IOException("No queued targets remain");
         var notes=new List<Dictionary<string,object>>();
         foreach(string id in ids) {
             if(File.Exists(Path.Combine(lease.Home,"state","inbox","handled",id+".note")))throw new IOException("Inbox target is already handled or ambiguous");
@@ -74,10 +91,19 @@ public sealed class NativeAcknowledgementEvidence {
         if(lease==null || !lease.IsHeld || evidence==null) return false;
         try {
             int version=Convert.ToInt32(evidence["version"]);ulong cutoff;
-            if(version!=1 && version!=2)return false;
-            if(!ulong.TryParse((string)evidence["cutoff"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff)||cutoff==0)return false;
+            if(version!=1 && version!=2 && version!=3)return false;
+            if(!ulong.TryParse((string)evidence["cutoff"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff))return false;
             var targets=evidence["rows"] as System.Collections.IList;
-            if(targets==null||targets.Count==0)return false;
+            if(targets==null)return false;
+            if(cutoff==0) {
+                if(version!=3 || targets.Count!=0)return false;
+                var zeroNotes=evidence["notes"] as System.Collections.IList;
+                string generation=evidence["recoveryGeneration"] as string,marker=evidence["recoveryMarker"] as string;
+                if(zeroNotes==null || zeroNotes.Count!=0 || generation==null || !Regex.IsMatch(generation,@"\A[A-Za-z0-9._-]+\z"))return false;
+                if(marker!="pending:handling:"+generation && marker!="announced:handling:"+generation)return false;
+                return RecoveryMarker(lease)=="acked:handling:"+generation && Read(lease.Home,Path.Combine("state",".wake-queue")).Length==0;
+            }
+            if(version==3 || targets.Count==0)return false;
             var saved=new List<string>();foreach(object target in targets){if(!(target is string))return false;saved.Add((string)target);}
             var validated=Rows(new UTF8Encoding(false,true).GetBytes(string.Join("\n",saved.ToArray())+"\n"),cutoff);
             if(validated.Count!=targets.Count)return false;

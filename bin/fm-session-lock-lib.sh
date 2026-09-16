@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Shared session-lock harness identity.
 #
-# ONE owner of the "which verified-harness process holds this home's session
-# lock, and does the current process descend from that same harness?" decision.
+# ONE owner of the "which verified-harness identity holds this home's session
+# lock, and does the current session prove that same ownership?" decision.
+# A session owner identity is a numeric local pid, a tagged Windows pid, or an
+# opaque native:<generation> value; process-introspection helpers remain numeric.
 # bin/fm-lock.sh uses it to acquire and inspect state/.lock;
 # bin/fm-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
 # lock-owning primary session before it may arm or rewake.
@@ -273,8 +275,10 @@ fm_win_harness_ancestry_pids() {
   return 1
 }
 
-# Walk the current process ancestry (up to 16 hops) and print this session's
-# contiguous verified-harness ancestry, innermost pid first.
+# Print this session's verified owner identities, innermost first. POSIX and
+# tagged-Windows routes walk at most 16 ancestry hops and print pids; the native
+# route prints the single opaque native:<generation> identity registered for the
+# home instead of treating it as a pid.
 #
 # The walk climbs freely until the first harness match, because the caller is
 # normally an ordinary shell several levels below its session. After that first
@@ -324,12 +328,12 @@ fm_harness_ancestry_pids() {
   [ "$printed" -eq 1 ]
 }
 
-# Print the one pid that identifies this session when the session lock is being
-# WRITTEN: the outermost pid of the contiguous run. That is the pid that lives as
+# Print the one owner identity written to the session lock: the opaque native
+# generation, or the outermost pid of the contiguous run. The latter lives as
 # long as the session - a Claude worker several levels in is reaped when its hook
 # returns, and a lock naming it would look stale moments later while the session
-# is still running. Every non-Claude harness reports a single pid, so this is its
-# innermost match unchanged.
+# is still running. Every non-Claude, non-native route reports a single pid, so
+# this is its innermost match unchanged.
 fm_harness_ancestry_pid() {
   local pids pid outermost=''
   pids=$(fm_harness_ancestry_pids) || return 1
@@ -342,7 +346,9 @@ EOF
   printf '%s\n' "$outermost"
 }
 
-# True if $1 is a live process that looks like a verified harness.
+# Classify a session-lock owner identity: 0 positively live, 1 proven dead, or 2
+# unknown. POSIX and tagged-Windows pid routes can prove only live or dead; the
+# native generation route preserves unreadable or ambiguous ownership as unknown.
 # A tagged Windows pid is answered from the Windows process table, because
 # kill -0 cannot see across that boundary and would report a live harness as
 # dead - which would hand a running session's home to a second one.
@@ -363,6 +369,8 @@ fm_harness_pid_alive() {
   fm_harness_process_matches "$comm" "$args"
 }
 
+# Test exclusion rather than positive health: return 0 for a live or unknown
+# owner identity, and 1 only when the owner is proven dead.
 fm_harness_pid_excludes() {
   local pid=$1 owner_rc
   case "$pid" in native:*)
@@ -373,14 +381,14 @@ fm_harness_pid_excludes() {
   fm_harness_pid_alive "$pid"
 }
 
-# True when state dir $1 holds a session lock whose pid is ANY harness ancestor
-# of the current process: this script runs inside the session that owns the
+# True when state dir $1 holds the owner identity of this native session or ANY
+# harness ancestor of the current process: this script runs inside the session that owns the
 # home's fleet lock. Membership is the honest test of that question, because the
 # lock owner sits at an unknown depth in a contiguous Claude run - it is the
 # outermost pid when the hook fires inside the session's own nested worker chain,
 # and an inner pid when a harness-named daemon parents the session. A missing
 # lock, a malformed lock, a lock held by a harness outside this ancestry, or an
-# ancestry that cannot be resolved all fail closed.
+# ancestry that cannot be resolved all refuse ownership.
 fm_session_lock_owned_by_self() {
   local state=$1 lock_pid pids pid native_state
   if fm_win_boundary_applies && FM_STATE_OVERRIDE="$state" fm_native_owner_selected; then

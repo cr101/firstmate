@@ -94,7 +94,15 @@ async function turn(threadId,text) {
  throw Error('Turn exceeded bounded wait');
 }
 try {
- await request('initialize',{clientInfo:{name:'firstmate-scoped-notification-test',version:'0.0.0'},capabilities:{experimentalApi:true}});
+  if(process.env.FM_PROBE_STARTUP_QUEUED==='1') {
+   const status=await native('status'),unavailable=await native('check');
+   const note=process.env.FM_PROBE_STARTUP_NOTE;
+   const preserved=fs.existsSync(path.join(process.env.FM_HOME,'state','inbox',note+'.note'));
+   if(status.operationState!=='starting'||unavailable.operationState!=='busy'||!preserved)throw Error('Queued startup notification was not preserved while work was unavailable');
+   evidence.startupQueued={status:status.operationState,unavailable:unavailable.operationState,preserved,note};save();
+   fs.writeFileSync(path.join(home,'startup-unavailable-observed'),'observed');
+  }
+  await request('initialize',{clientInfo:{name:'firstmate-scoped-notification-test',version:'0.0.0'},capabilities:{experimentalApi:true}});
  send({method:'initialized',params:{}});
  let ready=false;
  for(let i=0;i<1200;i++){const state=await native('result');if(state.startupExpired){ready=true;break;}await pause(100);}

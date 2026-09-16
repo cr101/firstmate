@@ -1,6 +1,16 @@
 import {spawn} from 'node:child_process';
 
 const MAX_MCP_STATUS_PAGES=256;
+const MCP_RUNTIME_STATUS_ACTIVE=new Map([
+ [null,false],
+ ['notStarted',true],
+ ['starting',true],
+ ['connected',true],
+ ['authenticationRequired',true],
+ ['failed',true],
+ ['cancelled',true],
+ ['disabled',false],
+]);
 
 function isRecord(value) {
  return value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -12,7 +22,7 @@ function validInstalledApp(value) {
 
 function validMcpServerStatus(value) {
  return isRecord(value)&&typeof value.name==='string'&&
-  (value.runtimeStatus===null||['notStarted','starting','connected','authenticationRequired','failed','cancelled','disabled'].includes(value.runtimeStatus))&&
+  MCP_RUNTIME_STATUS_ACTIVE.has(value.runtimeStatus)&&
   (value.pluginId===null||typeof value.pluginId==='string')&&
   (value.serverInfo===null||isRecord(value.serverInfo))&&
   (value.serverCapabilities===null||isRecord(value.serverCapabilities))&&
@@ -92,7 +102,7 @@ export async function verifyExternalToolIsolation(request,threadId,configuration
  if(!isRecord(installed)||!Array.isArray(installed.apps)||installed.apps.some(app=>!validInstalledApp(app)))throw Error('Invalid installed app catalog response');
  const apps=installed.apps;
  const mcpServers=await readMcpServerStatuses(request);
- const activeMcpServers=mcpServers.filter(server=>server.runtimeStatus!==null||server.serverInfo!==null||server.serverCapabilities!==null||server.toolsError!==null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
+ const activeMcpServers=mcpServers.filter(server=>MCP_RUNTIME_STATUS_ACTIVE.get(server.runtimeStatus)||server.serverInfo!==null||server.serverCapabilities!==null||server.toolsError!==null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
  const result={
   ...configuration,
   exposedApps:apps.map(app=>app.id),

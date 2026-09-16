@@ -103,6 +103,7 @@ async function turn(text){
  const result=turns.get(id);
  if(!closing&&(!result||!['completed','interrupted'].includes(result.status)))throw Error('The model turn did not complete');
  process.stdout.write('\n');
+ return result;
 }
 function fail(error){if(!terminal){terminal=error;console.error(error.message);process.exitCode=1;}void stop();}
 function stop(){
@@ -175,7 +176,12 @@ try {
    if(input.length){await turn(input.shift());continue;}
    if(ended)break;
    const result=await operation('check');
-   if(result.operationState==='delivered'&&result.notification.receipt!==announced){announced=result.notification.receipt;await turn('A new durable notification is available. Read it with fm_notification_check, handle it within the available authority, and acknowledge only if fully handled.');}
+   if(result.operationState==='delivered'&&result.notification.receipt!==announced){
+    const receipt=result.notification.receipt;
+    const handled=await turn('A new durable notification is available. Read it with fm_notification_check, handle it within the available authority, and acknowledge only if fully handled.');
+    if(!closing&&alive&&handled?.status==='completed')announced=receipt;
+    else if(!closing&&alive&&handled?.status==='interrupted')await pause(1000);
+   }
    else await pause(1000);
   }
  }

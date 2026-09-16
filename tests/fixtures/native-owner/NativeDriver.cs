@@ -169,6 +169,12 @@ public static partial class NativeOwner {
             }
             values["MSYS"]="winsymlinks:nativestrict";
             if(config.ContainsKey("apiDry") && (bool)config["apiDry"]) values["FM_PROBE_API_DRY"]="1";
+            if(config.ContainsKey("startupQueued") && (bool)config["startupQueued"]) {
+                string note=config.ContainsKey("startupNote") ? (string)config["startupNote"] : null;
+                if(!values.ContainsKey("FM_PROBE_API_DRY") || string.IsNullOrEmpty(note)) throw new ArgumentException("Queued-startup fixture requires model-free mode and a note");
+                foreach(char c in note) if(!char.IsLetterOrDigit(c) && c!='_' && c!='-') throw new ArgumentException("Invalid queued-startup note");
+                values["FM_PROBE_STARTUP_QUEUED"]="1";values["FM_PROBE_STARTUP_NOTE"]=note;
+            }
             if(config.ContainsKey("ackFault")) {
                 string fault=(string)config["ackFault"];
                 if(!values.ContainsKey("FM_PROBE_API_DRY") || (fault!="partial" && fault!="complete")) throw new ArgumentException("Fault injection is limited to the model-free fixture");

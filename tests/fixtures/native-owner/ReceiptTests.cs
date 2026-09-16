@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
@@ -23,6 +24,25 @@ public static class ReceiptTests {
         Directory.CreateDirectory(Path.GetDirectoryName(Handled(lease)));
         File.WriteAllText(Pending(lease),"original captured inbox record\n");
         File.WriteAllText(Queue(lease),"1\t1\tcheck\tinbox:note-id\tcaptain inbox note\n");
+    }
+    static string Quote(string value) { return "\""+value.Replace("\"","\\\"")+"\""; }
+    static string ZeroRecovery(NativeHomeLease lease,string action,string generation=null) {
+        string root=Environment.GetEnvironmentVariable("FM_PROBE_CODE_ROOT");
+        if(string.IsNullOrEmpty(root))throw new InvalidOperationException("Zero-recovery fixture root is required");
+        string script=Path.Combine(root,"tests","fixtures","native-owner","zero-recovery.sh");
+        var start=new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script)+" "+action+" "+Quote(lease.Home)+(generation==null ? "" : " "+Quote(generation))) {UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true};
+        start.EnvironmentVariables["MSYS"]="winsymlinks:nativestrict";
+        using(var process=Process.Start(start)) {
+            var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
+            if(!process.WaitForExit(30000)){process.Kill();throw new IOException("Zero-recovery fixture exceeded its bound");}
+            if(process.ExitCode!=0)throw new IOException("Zero-recovery fixture failed: "+error.Result);
+            return output.Result.Trim();
+        }
+    }
+    static Dictionary<string,object> ZeroPayload(NativeHomeLease lease) {
+        string[] target=ZeroRecovery(lease,"present").Split('\t');
+        Expect(target.Length==2 && target[0]=="0","Real recovery owner did not produce a zero-row target");
+        return new Dictionary<string,object>{{"challenge","zero"},{"message","recovery"},{"seq",target[0]},{"generation",target[1]},{"notes",new string[0]}};
     }
     public static int Run() {
         Case("one writer and unobserved acknowledgement refusal",lease=>{
@@ -175,6 +195,51 @@ public static class ReceiptTests {
                 if(scenario=="no-inbox-targets")Expect(File.Exists(Pending(lease)),"Unrelated inbox note was consumed");
             });
         }
+        Case("zero-row recovery rejects an unproven empty target",lease=>{
+            Directory.CreateDirectory(Path.GetDirectoryName(Queue(lease)));File.WriteAllText(Queue(lease),"");
+            var payload=new Dictionary<string,object>{{"challenge","zero"},{"message","recovery"},{"seq","0"},{"generation","missing"},{"notes",new string[0]}};
+            using(var journal=new NativeReceiptJournal(lease,A)) {
+                var delivery=journal.Present(payload);
+                Refuses(()=>NativeAcknowledgementEvidence.Capture(lease,delivery),"Arbitrary empty target accepted");
+                Expect(!journal.NeedsReconciliation,"Rejected empty target created an attempt");
+            }
+        });
+        Case("zero-row recovery rejects a mismatched generation",lease=>{
+            var payload=ZeroPayload(lease);payload["generation"]="different";
+            using(var journal=new NativeReceiptJournal(lease,A)) {
+                var delivery=journal.Present(payload);
+                Refuses(()=>NativeAcknowledgementEvidence.Capture(lease,delivery),"Mismatched recovery generation accepted");
+            }
+        });
+        Case("zero-row recovery interruption preserves the obligation",lease=>{
+            var payload=ZeroPayload(lease);string receipt;
+            using(var journal=new NativeReceiptJournal(lease,A)) {
+                var delivery=journal.Present(payload);receipt=(string)delivery["receipt"];
+                journal.BeginAcknowledgement(receipt,"zero",NativeAcknowledgementEvidence.Capture(lease,delivery));
+            }
+            string marker=File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down"));
+            using(var journal=new NativeReceiptJournal(lease,B)) {
+                Expect(journal.ReconcileCompletedAcknowledgements()==0,"Unperformed recovery target was invented");
+                Expect(journal.NeedsReconciliation,"Interrupted recovery target was lost");
+            }
+            Expect(File.ReadAllText(Queue(lease))=="","Interrupted recovery changed the queue");
+            Expect(marker==File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")),"Interrupted recovery rolled back the target");
+        });
+        Case("completed zero-row recovery reconciles without replay",lease=>{
+            var payload=ZeroPayload(lease);string receipt,generation=(string)payload["generation"];
+            using(var journal=new NativeReceiptJournal(lease,A)) {
+                var delivery=journal.Present(payload);receipt=(string)delivery["receipt"];
+                journal.BeginAcknowledgement(receipt,"zero",NativeAcknowledgementEvidence.Capture(lease,delivery));
+            }
+            ZeroRecovery(lease,"acknowledge",generation);
+            string queue=File.ReadAllText(Queue(lease)),marker=File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down"));
+            using(var journal=new NativeReceiptJournal(lease,B)) {
+                Expect(journal.ReconcileCompletedAcknowledgements()==1,"Completed zero-row target was not reconciled");
+                Expect(!journal.NeedsReconciliation,"Completed zero-row target remained ambiguous");
+                Expect(journal.ReconcileCompletedAcknowledgements()==0,"Completed zero-row target replayed");
+            }
+            Expect(queue==File.ReadAllText(Queue(lease)) && marker==File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")),"Reconciliation changed completed effects");
+        });
         Console.WriteLine("RECEIPT_TESTS_PASS "+passed);return 0;
     }
 }

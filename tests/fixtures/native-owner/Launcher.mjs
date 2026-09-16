@@ -115,10 +115,36 @@ if(live){
  const host=read(path.join(runtime,'host.json'));assert.equal(host.turns.length,2);
  assert(host.tools.some(tool=>tool.tool==='fm_notification_check'&&tool.success));assert(host.tools.some(tool=>tool.tool==='fm_notification_ack'&&tool.success));
  for(const note of notes)assert(fs.existsSync(path.join(messageHome,'state/inbox/handled',note+'.note')));
- assert.equal(fs.readFileSync(path.join(messageHome,'state/.wake-queue'),'utf8').trim(),'');
- fs.writeFileSync(path.join(runtime,'console.json'),JSON.stringify(result,null,2));
- records.push('two real post-startup notification cycles were automatically delivered, observed, and acknowledged');
- const cancelHome=path.join(area,'live-cancel');const pendingNote=enqueue(cancelHome,'Cancellation test: leave this notification pending; do not acknowledge it.');
+  assert.equal(fs.readFileSync(path.join(messageHome,'state/.wake-queue'),'utf8').trim(),'');
+  fs.writeFileSync(path.join(runtime,'console.json'),JSON.stringify(result,null,2));
+  records.push('two real post-startup notification cycles were automatically delivered, observed, and acknowledged');
+  const retryHome=path.join(area,'live-interrupted-redelivery');
+  const retryNote=enqueue(retryHome,'Interrupted automatic handling test: read and acknowledge this notification when handling resumes.');
+  const retry=start(retryHome,false);const retryReady=await ready(retry);let interruptSent=false,interrupted=false,completed=false;
+  for(let i=0;i<1800;i++){
+   if(retry.child.exitCode!==null)throw Error(JSON.stringify(await retry.done));
+   const host=read(path.join(retryReady.runtime,'host.json'));
+   if(host.activeTurn){retry.child.stdin.write('/interrupt\n');interruptSent=true;break;}
+   await sleep(50);
+  }
+  assert(interruptSent,'No automatic notification turn became active for interruption');
+  for(let i=0;i<1800;i++){
+   if(retry.child.exitCode!==null)throw Error(JSON.stringify(await retry.done));
+   const turns=read(path.join(retryReady.runtime,'host.json')).turns;
+   interrupted=turns.some(turn=>turn.status==='interrupted');completed=interrupted&&turns.some(turn=>turn.status==='completed');
+   if(completed&&fs.existsSync(path.join(retryHome,'state/inbox/handled',retryNote+'.note')))break;
+   await sleep(100);
+  }
+  assert(interrupted,'The automatic notification turn was not interrupted');
+  assert(completed,'The interrupted notification was not offered to a later automatic turn');
+  await sleep(1500);
+  assert.deepEqual(read(path.join(retryReady.runtime,'host.json')).turns.map(turn=>turn.status),['interrupted','completed']);
+  retry.child.stdin.write('/quit\n');const retryResult=await bound(retry.done,retry,20000);assert.equal(retryResult.exit,0,retryResult.stderr);
+  assert.equal(read(path.join(retryReady.runtime,'host.json')).turns.length,2);
+  assert.equal(read(path.join(retryReady.runtime,'shutdown.json')).stopped,true);
+  assert.equal(fs.readFileSync(path.join(retryHome,'state/.wake-queue'),'utf8').trim(),'');
+  records.push('interrupted automatic handling re-offered the pending receipt once, then stopped after completion and quit');
+  const cancelHome=path.join(area,'live-cancel');const pendingNote=enqueue(cancelHome,'Cancellation test: leave this notification pending; do not acknowledge it.');
  const active=start(cancelHome,false);active.child.stdin.write('Call fm_notification_check once, but do not acknowledge anything. Explain what remains pending. Do not use other tools.\n');
  const current=await ready(active);let began=false;
  for(let i=0;i<1200;i++){if(read(path.join(current.runtime,'host.json')).activeTurn){began=true;break;}await sleep(50);}

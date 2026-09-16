@@ -7,6 +7,13 @@ export FM_HOME
 FM_HOME=$(cygpath -u "${FM_HOME:?}")
 export PATH="$BUILD/tools:$PATH"
 LOG=$(cygpath -u "${FM_PROBE_HOME:?}")
+if [ "${FM_PROBE_STARTUP_QUEUED:-}" = 1 ]; then
+  for ((i=0; i<100; i++)); do
+    [ -f "$LOG/startup-unavailable-observed" ] && break
+    sleep 0.1
+  done
+  [ -f "$LOG/startup-unavailable-observed" ]
+fi
 mkdir -p "$FM_HOME/state" "$FM_HOME/config" "$FM_HOME/data"
 # Explicit empty manual backlog avoids inventing work or invoking task migration.
 printf 'manual\n' > "$FM_HOME/config/backlog-backend"

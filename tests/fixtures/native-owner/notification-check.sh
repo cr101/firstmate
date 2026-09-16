@@ -11,9 +11,14 @@ cd "$ROOT"
 . bin/fm-session-lock-lib.sh
 fm_session_lock_owned_by_self "$FM_HOME/state"
 [ -f "$LOG/owner-operation.complete" ]
-bin/fm-wake-drain.sh > "$LOG/cycle-initial-drain.log" 2>&1
 challenge=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')
-bin/fm-inbox.sh note "Controlled notification. Confirm observation of $challenge; no project action is requested." > "$LOG/cycle-enqueue.log"
+if [ "${FM_PROBE_STARTUP_QUEUED:-}" = 1 ]; then
+  note=${FM_PROBE_STARTUP_NOTE:?}
+else
+  bin/fm-wake-drain.sh > "$LOG/cycle-initial-drain.log" 2>&1
+  bin/fm-inbox.sh note "Controlled notification. Confirm observation of $challenge; no project action is requested." > "$LOG/cycle-enqueue.log"
+  note=$(awk '/^queued / {print $2}' "$LOG/cycle-enqueue.log")
+fi
 set +e
 bin/fm-watch-checkpoint.sh --seconds 3 > "$LOG/cycle-checkpoint.log" 2>&1
 rc=$?
@@ -22,8 +27,7 @@ case "$rc" in 0|124) ;; *) exit "$rc" ;; esac
 bin/fm-wake-drain.sh > "$LOG/cycle-delivery.log" 2>&1
 bin/fm-inbox.sh drain > "$LOG/cycle-message.log"
 message=$(<"$LOG/cycle-message.log")
-grep -q "$challenge" "$LOG/cycle-message.log"
-note=$(awk '/^queued / {print $2}' "$LOG/cycle-enqueue.log")
+if [ "${FM_PROBE_STARTUP_QUEUED:-}" != 1 ]; then grep -q "$challenge" "$LOG/cycle-message.log"; fi
 ack=$(grep 'WAKE_ACK_REQUIRED:' "$LOG/cycle-delivery.log" | tail -1)
 seq=$(awk '{for(i=1;i<NF;i++)if($i=="--ack-through")print $(i+1)}' <<< "$ack")
 generation=$(awk '{for(i=1;i<NF;i++)if($i=="--recovery-generation")print $(i+1)}' <<< "$ack")
