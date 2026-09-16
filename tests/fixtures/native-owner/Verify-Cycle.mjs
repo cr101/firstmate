@@ -64,5 +64,5 @@ if(!fs.existsSync(archive)) {
  fs.cpSync(home,path.join(archive,'live'),{recursive:true});
 }
 
-fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,durableAcknowledgement:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.root,'codex-tool-gate.mjs')),lifecycleHash:hash(path.join(build.root,'host-lifecycle.mjs')),confirmedShutdown:host.shutdown},null,2));
+fs.writeFileSync(path.join(state,'verification.json'),JSON.stringify({passed:true,realModelTurns:2,realToolCalls:4,threadAndReplayRejection:true,postStartup:true,durableAcknowledgement:true,buildSources:build.hashes,binaryHash:hash(build.binary),gateHash:hash(path.join(build.code,'codex-tool-gate.mjs')),lifecycleHash:hash(path.join(build.code,'host-lifecycle.mjs')),confirmedShutdown:host.shutdown},null,2));
 console.log('PASS: consolidated candidate protocol, ownership, and durable acknowledgement evidence.');

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mutate only the controller's captured receipt targets, using existing owners.
+# Usage: FM_HOME=<home> FM_PROBE_HOME=<runtime> ack.sh
+# Required environment: FM_HOME and FM_PROBE_HOME.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 LOG=$(cygpath -u "${FM_PROBE_HOME:?}")

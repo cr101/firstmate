@@ -2,12 +2,44 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 public static partial class NativeOwner {
     static NativeReceiptJournal operationJournal;
     static bool shutdownRequested;
+    internal static string CodeRoot { get { return Path.GetDirectoryName(Path.GetDirectoryName(OwnExe)); } }
+    internal static ProcessStartInfo BashHelper(string script,string arguments,string home,bool includeProbe=false) {
+        var start=new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script.Replace('\\','/'))+(string.IsNullOrEmpty(arguments) ? "" : " "+arguments)) {UseShellExecute=false,CreateNoWindow=true};
+        start.EnvironmentVariables.Clear();
+        foreach(string key in new [] {"SystemRoot","WINDIR","TEMP","TMP","USERPROFILE","APPDATA","LOCALAPPDATA"}) {
+            string value=Environment.GetEnvironmentVariable(key);if(value!=null)start.EnvironmentVariables[key]=value;
+        }
+        start.EnvironmentVariables["PATH"]=@"C:\Program Files\Git\usr\bin;C:\Windows\System32;C:\Windows;C:\Program Files\nodejs;C:\Program Files\GitHub CLI;"+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"npm");
+        if(includeProbe) {
+            foreach(string key in new [] {"FM_PROBE_PIPE","FM_PROBE_SESSION","FM_PROBE_HOME","FM_PROBE_NONCE","FM_PROBE_EXE","FM_PROBE_JQ_IMAGE","FM_PROBE_VERIFY_ONLY"}) {
+                string value=Environment.GetEnvironmentVariable(key);if(value!=null)start.EnvironmentVariables[key]=value;
+            }
+        }
+        start.EnvironmentVariables["FM_HOME"]=home;
+        start.EnvironmentVariables["MSYS"]="winsymlinks:nativestrict";
+        return start;
+    }
+    static void OwnerAdmission(string home) {
+        string script=Path.Combine(CodeRoot,"bin","native-owner","admit.sh");
+        var start=BashHelper(script,"",home);start.RedirectStandardError=true;
+        using(var process=Process.Start(start)) {
+            var error=process.StandardError.ReadToEndAsync();
+            if(!process.WaitForExit(30000)){process.Kill();throw new TimeoutException("The empty-fleet owner preflight exceeded its bound");}
+            if(process.ExitCode!=0)throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing records were preserved: "+error.Result.Trim());
+        }
+    }
+    internal static void EmptyFleet(string home) {
+        string state=Path.Combine(home,"state"),projects=Path.Combine(home,"projects");
+        if((Directory.Exists(projects)&&Directory.GetFileSystemEntries(projects).Length!=0) || File.Exists(Path.Combine(home,"data","secondmates.md")) || File.Exists(Path.Combine(home,"data","projects.md")) || File.Exists(Path.Combine(home,".env")) || File.Exists(Path.Combine(home,"config","x-mode.env")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
+        OwnerAdmission(home);
+    }
     static IntPtr FileHandle(string path, uint access, uint creation) {
         SA sa = new SA { length=Marshal.SizeOf(typeof(SA)), inherit=1 };
         IntPtr h = CreateFile(path, access, 3, ref sa, creation, 0x80, IntPtr.Zero);

@@ -623,7 +623,61 @@ fm_recovery_marker_read() {
   case "${line##*:}" in
     ''|*[!A-Za-z0-9._-]*) return 1 ;;
   esac
+  [ "${#line}" -le 160 ] || return 1
   FM_RECOVERY_MARKER_TOKEN=$line
+}
+
+_fm_recovery_completion_has_locked() {
+  local marker=$1 generation=$2 file="${1}.ack-completions" size
+  [ "${#generation}" -le 128 ] || return 2
+  if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+    return 1
+  fi
+  [ -f "$file" ] && [ ! -L "$file" ] || return 2
+  size=$(wc -c < "$file" 2>/dev/null | tr -d '[:space:]') || return 2
+  case "$size" in ''|*[!0-9]*) return 2 ;; esac
+  [ "$size" -le 262144 ] || return 2
+  LC_ALL=C awk -v target="$generation" '
+    NR == 1 { if ($0 != "fm-wake-ack-completions-v1") bad=1; next }
+    length($0) > 128 || $0 !~ /^[A-Za-z0-9._-]+$/ || seen[$0]++ { bad=1 }
+    $0 == target { found=1 }
+    NR > 1025 { bad=1 }
+    END {
+      if (NR < 1 || bad) exit 2
+      if (found) exit 0
+      exit 1
+    }
+  ' "$file"
+}
+
+_fm_recovery_completion_preserve_locked() {
+  local marker=$1 generation=$2 file="${1}.ack-completions" status count tmp
+  [ "${#generation}" -le 128 ] || return 1
+  if _fm_recovery_completion_has_locked "$marker" "$generation"; then
+    return 0
+  else
+    status=$?
+  fi
+  case "$status" in
+    1) ;;
+    *) return 1 ;;
+  esac
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    count=$(awk 'END { print NR - 1 }' "$file") || return 1
+    [ "$count" -lt 1024 ] || return 1
+  fi
+  tmp=$(mktemp "${file}.tmp.XXXXXX") || return 1
+  if [ -e "$file" ]; then
+    cp "$file" "$tmp" || { rm -f -- "$tmp"; return 1; }
+  else
+    printf 'fm-wake-ack-completions-v1\n' > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  fi
+  if ! printf '%s\n' "$generation" >> "$tmp" \
+    || ! chmod 0600 "$tmp" \
+    || ! _fm_atomic_replace "$tmp" "$file"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 _fm_atomic_replace() {
@@ -672,6 +726,16 @@ _fm_recovery_marker_publish() {
         announced:handling:*|announced:downtime:*)
           generation=${FM_RECOVERY_MARKER_TOKEN##*:}
           status=announced
+          ;;
+        acked:handling:*|acked:downtime:*)
+          generation=${FM_RECOVERY_MARKER_TOKEN##*:}
+          if ! _fm_recovery_completion_preserve_locked "$marker" "$generation"; then
+            FM_RECOVERY_MARKER_TOKEN=$saved_token
+            fm_lock_release "$lock"
+            return 1
+          fi
+          generation=''
+          status=pending
           ;;
       esac
     fi
@@ -728,6 +792,34 @@ fm_recovery_marker_snapshot() {
   fm_lock_release "$lock"
 }
 
+FM_RECOVERY_COMPLETION_SOURCE=
+fm_recovery_marker_completed() {
+  local marker=$1 generation=$2 lock status
+  FM_RECOVERY_COMPLETION_SOURCE=
+  lock="${marker}.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if ! fm_recovery_marker_read "$marker"; then
+    fm_lock_release "$lock"
+    return 1
+  fi
+  if [ "$FM_RECOVERY_MARKER_TOKEN" = "acked:handling:$generation" ] \
+    || [ "$FM_RECOVERY_MARKER_TOKEN" = "acked:downtime:$generation" ]; then
+    FM_RECOVERY_COMPLETION_SOURCE=current
+    fm_lock_release "$lock"
+    return 0
+  fi
+  if _fm_recovery_completion_has_locked "$marker" "$generation"; then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 0 ]; then
+    FM_RECOVERY_COMPLETION_SOURCE=history
+  fi
+  fm_lock_release "$lock"
+  return "$status"
+}
+
 _fm_recovery_marker_ack() {
   local marker=$1 expected_generation=$2 lock tmp line
   [ -n "$expected_generation" ] || return 2
@@ -749,6 +841,10 @@ _fm_recovery_marker_ack() {
     || ! chmod 0600 "$tmp" \
     || ! mv -f -- "$tmp" "$marker"; then
     rm -f -- "$tmp"
+    fm_lock_release "$lock"
+    return 1
+  fi
+  if ! _fm_recovery_completion_preserve_locked "$marker" "$expected_generation"; then
     fm_lock_release "$lock"
     return 1
   fi
@@ -2096,7 +2192,7 @@ fm_wake_ack_note_safe() {  # <path>
 fm_wake_ack_evidence_clear() {
   [ -z "$FM_WAKE_ACK_EVIDENCE_ROWS" ] || rm -f -- "$FM_WAKE_ACK_EVIDENCE_ROWS"
   [ -z "$FM_WAKE_ACK_EVIDENCE_NOTES" ] || rm -f -- "$FM_WAKE_ACK_EVIDENCE_NOTES" \
-    "$FM_WAKE_ACK_EVIDENCE_NOTES.hashes" "$FM_WAKE_ACK_EVIDENCE_NOTES.expected" "$FM_WAKE_ACK_EVIDENCE_NOTES.actual"
+    "$FM_WAKE_ACK_EVIDENCE_NOTES.hashes"
   FM_WAKE_ACK_EVIDENCE_TOKEN=
   FM_WAKE_ACK_EVIDENCE_CUTOFF=
   FM_WAKE_ACK_EVIDENCE_GENERATION=
@@ -2245,6 +2341,7 @@ fm_wake_ack_evidence_load() {  # <opaque-token>
   IFS=$'\t' read -r tag FM_WAKE_ACK_EVIDENCE_GENERATION extra <&7 || true
   [ "$tag" = generation ] && [ -z "$extra" ] || { exec 7<&-; rm -f -- "$payload"; fm_wake_ack_evidence_clear; return 1; }
   case "$FM_WAKE_ACK_EVIDENCE_GENERATION" in ''|*[!A-Za-z0-9._-]*) exec 7<&-; rm -f -- "$payload"; fm_wake_ack_evidence_clear; return 1 ;; esac
+  [ "${#FM_WAKE_ACK_EVIDENCE_GENERATION}" -le 128 ] || { exec 7<&-; rm -f -- "$payload"; fm_wake_ack_evidence_clear; return 1; }
   IFS=$'\t' read -r tag value extra <&7 || true
   if [ "$tag" != marker ] || [ -n "$extra" ] || ! FM_WAKE_ACK_EVIDENCE_MARKER=$(printf '%s' "$value" | base64 -d 2>/dev/null); then
     exec 7<&-; rm -f -- "$payload"; fm_wake_ack_evidence_clear; return 1
@@ -2345,8 +2442,8 @@ fm_wake_ack_evidence_completed() {  # <opaque-token>
     return 1
   fi
   if [ "$FM_WAKE_ACK_EVIDENCE_CUTOFF" = 0 ]; then
-    fm_recovery_marker_snapshot "$marker" || true
-    if [ "$FM_RECOVERY_MARKER_TOKEN" != "acked:handling:$FM_WAKE_ACK_EVIDENCE_GENERATION" ] || [ -s "$FM_WAKE_QUEUE" ]; then
+    if ! fm_recovery_marker_completed "$marker" "$FM_WAKE_ACK_EVIDENCE_GENERATION" \
+      || { [ "$FM_RECOVERY_COMPLETION_SOURCE" = current ] && [ -s "$FM_WAKE_QUEUE" ]; }; then
       fm_wake_ack_evidence_clear
       return 1
     fi

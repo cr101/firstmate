@@ -12,22 +12,6 @@ using System.Text;
 using System.Threading;
 public static partial class NativeOwner {
     [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int kind);
-    static string CodeRoot { get { return Path.GetDirectoryName(Path.GetDirectoryName(OwnExe)); } }
-    static void OwnerAdmission(string home) {
-        string script=Path.Combine(CodeRoot,"bin","native-owner","admit.sh");
-        var start=new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script.Replace('\\','/'))) {UseShellExecute=false,RedirectStandardError=true,CreateNoWindow=true};
-        start.EnvironmentVariables["FM_HOME"]=home;
-        using(var process=Process.Start(start)) {
-            var error=process.StandardError.ReadToEndAsync();
-            if(!process.WaitForExit(30000)){process.Kill();throw new TimeoutException("The empty-fleet owner preflight exceeded its bound");}
-            if(process.ExitCode!=0)throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing records were preserved: "+error.Result.Trim());
-        }
-    }
-    static void EmptyFleet(string home) {
-        string state=Path.Combine(home,"state"),projects=Path.Combine(home,"projects");
-        if((Directory.Exists(projects)&&Directory.GetFileSystemEntries(projects).Length!=0) || File.Exists(Path.Combine(home,"data","secondmates.md")) || File.Exists(Path.Combine(home,"data","projects.md")) || File.Exists(Path.Combine(home,".env")) || File.Exists(Path.Combine(home,"config","x-mode.env")) || File.Exists(Path.Combine(state,"x-watch.check.sh")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
-        OwnerAdmission(home);
-    }
     static int Launch(string selectedHome) {
         string home=Path.GetFullPath(selectedHome), node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");
         string host=Path.Combine(CodeRoot,"bin","native-owner","codex-host.mjs");
@@ -142,7 +126,7 @@ public static partial class NativeOwner {
         string home=Environment.GetEnvironmentVariable("FM_HOME");EmptyFleet(home);
         if(OwnerClient(purpose=="startup" ? "identity" : "owns",Path.Combine(home,"state"),"")!=0)throw new InvalidOperationException("Operation is not registered");
         string script=Path.Combine(CodeRoot,"bin","native-owner",purpose+".sh");
-        using(var process=Process.Start(new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script.Replace('\\','/'))) {UseShellExecute=false})) {
+        using(var process=Process.Start(BashHelper(script,"",home,true))) {
             if(!process.WaitForExit(purpose=="startup" ? 240000 : 60000))throw new TimeoutException("Fixed operation exceeded its bound");return process.ExitCode;
         }
     }

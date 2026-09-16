@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Usage: zero-recovery.sh present|acknowledge|append <home> [generation]
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 export FM_HOME
@@ -25,6 +26,10 @@ case "${1:-}" in
     generation=${3:-}
     case "$generation" in ''|*[!A-Za-z0-9._-]*) exit 2 ;; esac
     bin/fm-wake-drain.sh --ack-through 0 --recovery-generation "$generation"
+    ;;
+  append)
+    . bin/fm-wake-lib.sh
+    fm_wake_append check later-notification 'later notification remains pending'
     ;;
   *) exit 2 ;;
 esac

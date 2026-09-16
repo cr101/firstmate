@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run startup once, publish its digest promptly, retain only bounded deferred authority.
+# Usage: FM_HOME=<home> FM_PROBE_HOME=<runtime> FM_PROBE_JQ_IMAGE=<image> startup.sh
+# Required environment: FM_HOME, FM_PROBE_HOME, and FM_PROBE_JQ_IMAGE.
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 LOG=$(cygpath -u "${FM_PROBE_HOME:?}")

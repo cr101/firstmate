@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Read actual work only. No synthetic note or scripted model prompt is generated.
+# Usage: FM_HOME=<home> FM_PROBE_HOME=<runtime> FM_PROBE_JQ_IMAGE=<image> check.sh
+# Required environment: FM_HOME, FM_PROBE_HOME, and FM_PROBE_JQ_IMAGE.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 LOG=$(cygpath -u "${FM_PROBE_HOME:?}")

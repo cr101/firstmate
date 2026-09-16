@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Container-only jq; mount only the code root and operational home, read-only.
+# Usage: FM_HOME=<home> FM_PROBE_JQ_IMAGE=<image> jq [arguments...]
+# Required environment: FM_HOME and FM_PROBE_JQ_IMAGE.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 HOME_PATH=$(cygpath -u "${FM_HOME:?}")

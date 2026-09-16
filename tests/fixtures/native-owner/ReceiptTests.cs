@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
+using System.Text;
+using System.Web.Script.Serialization;
 public static class ReceiptTests {
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateHardLink(string link,string target,IntPtr security);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] [return: MarshalAs(UnmanagedType.I1)] static extern bool CreateSymbolicLink(string link,string target,uint flags);
@@ -18,6 +20,7 @@ public static class ReceiptTests {
         passed++;Console.WriteLine("PASS: "+name);
     }
     static string Queue(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".wake-queue"); }
+    static string CompletionHistory(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".watcher-down.ack-completions"); }
     static string Pending(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","note-id.note"); }
     static string Handled(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","handled","note-id.note"); }
     static void Targets(NativeHomeLease lease) {
@@ -27,13 +30,10 @@ public static class ReceiptTests {
         File.WriteAllText(Path.Combine(lease.Home,"state",".main-eligible-rows"),"1\n");
         File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:recovery\n");
     }
-    static string Quote(string value) { return "\""+value.Replace("\"","\\\"")+"\""; }
     static string ZeroRecovery(NativeHomeLease lease,string action,string generation=null) {
-        string root=Environment.GetEnvironmentVariable("FM_PROBE_CODE_ROOT");
-        if(string.IsNullOrEmpty(root))throw new InvalidOperationException("Zero-recovery fixture root is required");
-        string script=Path.Combine(root,"tests","fixtures","native-owner","zero-recovery.sh");
-        var start=new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script)+" "+action+" "+Quote(lease.Home)+(generation==null ? "" : " "+Quote(generation))) {UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true};
-        start.EnvironmentVariables["MSYS"]="winsymlinks:nativestrict";
+        string script=Path.Combine(NativeOwner.CodeRoot,"tests","fixtures","native-owner","zero-recovery.sh");
+        string arguments=action+" \""+lease.Home.Replace("\"","\\\"")+"\""+(generation==null ? "" : " \""+generation.Replace("\"","\\\"")+"\"");
+        var start=NativeOwner.BashHelper(script,arguments,lease.Home);start.RedirectStandardOutput=true;start.RedirectStandardError=true;
         using(var process=Process.Start(start)) {
             var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
             if(!process.WaitForExit(30000)){process.Kill();throw new IOException("Zero-recovery fixture exceeded its bound");}
@@ -41,10 +41,24 @@ public static class ReceiptTests {
             return output.Result.Trim();
         }
     }
+    static Dictionary<string,object> OwnerPayload(NativeHomeLease lease,string challenge) {
+        string script=Path.Combine(NativeOwner.CodeRoot,"bin","native-owner","ack-evidence.sh");
+        var start=NativeOwner.BashHelper(script,"capture-json",lease.Home);start.RedirectStandardOutput=true;start.RedirectStandardError=true;
+        using(var process=Process.Start(start)) {
+            var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
+            if(!process.WaitForExit(30000)){process.Kill();throw new IOException("Acknowledgement target fixture exceeded its bound");}
+            if(process.ExitCode!=0)throw new IOException("Acknowledgement target fixture failed: "+error.Result);
+            var payload=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(output.Result);
+            payload["challenge"]=challenge;payload["message"]="pending notification";
+            return payload;
+        }
+    }
     static Dictionary<string,object> ZeroPayload(NativeHomeLease lease) {
         string[] target=ZeroRecovery(lease,"present").Split('\t');
         Expect(target.Length==2 && target[0]=="0","Real recovery owner did not produce a zero-row target");
-        return new Dictionary<string,object>{{"challenge","zero"},{"message","recovery"},{"seq",target[0]},{"generation",target[1]},{"notes",new string[0]}};
+        var payload=OwnerPayload(lease,"zero");
+        Expect((string)payload["seq"]==target[0] && (string)payload["generation"]==target[1],"Owner evidence did not bind the recovery target");
+        payload["message"]="recovery";return payload;
     }
     public static int Run() {
         Case("one writer and unobserved acknowledgement refusal",lease=>{
@@ -136,9 +150,9 @@ public static class ReceiptTests {
             Case("interrupted recovery: "+scenario,lease=>{
                 Targets(lease);string receipt;
                 using(var journal=new NativeReceiptJournal(lease,A)) {
-                    var delivery=journal.Present(Payload("first"));receipt=(string)delivery["receipt"];
-                    var evidence=NativeAcknowledgementEvidence.Capture(lease,delivery);
-                    journal.BeginAcknowledgement(receipt,"first",scenario=="no-evidence" ? null : evidence);
+                    var delivery=journal.Present(OwnerPayload(lease,"first"));receipt=(string)delivery["receipt"];
+                    var evidence=scenario=="no-evidence" ? null : NativeAcknowledgementEvidence.Capture(lease,delivery);
+                    journal.BeginAcknowledgement(receipt,"first",evidence);
                 }
                 if(scenario!="pending" && scenario!="wake-only") File.Move(Pending(lease),Handled(lease));
                 if(scenario!="pending" && scenario!="note-only") File.WriteAllText(Queue(lease),"");
@@ -168,7 +182,7 @@ public static class ReceiptTests {
             Targets(lease);
             string otherHome=Path.Combine(Path.GetTempPath(),"fm-receipts-other-"+Guid.NewGuid().ToString("N"));
             using(var other=new NativeHomeLease(otherHome)) using(var journal=new NativeReceiptJournal(lease,A)) {
-                Targets(other);var delivery=journal.Present(Payload("first"));
+                Targets(other);var delivery=journal.Present(OwnerPayload(other,"first"));
                 var evidence=NativeAcknowledgementEvidence.Capture(other,delivery);
                 Refuses(()=>journal.BeginAcknowledgement((string)delivery["receipt"],"first",evidence),"Foreign home evidence accepted");
                 Expect(!journal.NeedsReconciliation,"Rejected evidence created an attempt");
@@ -176,17 +190,16 @@ public static class ReceiptTests {
         });
         foreach(string scenario in new [] {"no-inbox-targets","multiple-complete","multiple-partial"}) {
             Case("general wake recovery: "+scenario,lease=>{
-                Targets(lease);var payload=Payload("general");payload.Remove("note");
+                Targets(lease);
                 if(scenario=="no-inbox-targets") {
-                    payload["notes"]=new string[0];File.WriteAllText(Queue(lease),"1\t1\tcheck\tdiagnostic\treport\n");
+                    File.WriteAllText(Queue(lease),"1\t1\tcheck\tdiagnostic\treport\n");
                 } else {
-                    payload["notes"]=new [] {"note-id","second"};payload["seq"]="2";
                     File.WriteAllText(Path.Combine(lease.Home,"state","inbox","second.note"),"second notification");
                     File.AppendAllText(Queue(lease),"2\t2\tcheck\tinbox:second\tsecond\n");
                     File.WriteAllText(Path.Combine(lease.Home,"state",".main-eligible-rows"),"1\n2\n");
                 }
                 using(var journal=new NativeReceiptJournal(lease,A)) {
-                    var delivery=journal.Present(payload);
+                    var delivery=journal.Present(OwnerPayload(lease,"general"));
                     journal.BeginAcknowledgement((string)delivery["receipt"],"general",NativeAcknowledgementEvidence.Capture(lease,delivery));
                 }
                 if(scenario!="no-inbox-targets") {
@@ -208,10 +221,12 @@ public static class ReceiptTests {
             }
         });
         Case("zero-row recovery rejects a mismatched generation",lease=>{
-            var payload=ZeroPayload(lease);payload["generation"]="different";
+            var payload=ZeroPayload(lease);string generation=(string)payload["generation"];
+            ZeroRecovery(lease,"acknowledge",generation);
+            ZeroRecovery(lease,"append");
             using(var journal=new NativeReceiptJournal(lease,A)) {
                 var delivery=journal.Present(payload);
-                Refuses(()=>NativeAcknowledgementEvidence.Capture(lease,delivery),"Mismatched recovery generation accepted");
+                Refuses(()=>NativeAcknowledgementEvidence.Capture(lease,delivery),"Foreign recovery generation accepted");
             }
         });
         Case("zero-row recovery interruption preserves the obligation",lease=>{
@@ -235,6 +250,7 @@ public static class ReceiptTests {
                 journal.BeginAcknowledgement(receipt,"zero",NativeAcknowledgementEvidence.Capture(lease,delivery));
             }
             ZeroRecovery(lease,"acknowledge",generation);
+            ZeroRecovery(lease,"append");
             string queue=File.ReadAllText(Queue(lease)),marker=File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down"));
             using(var journal=new NativeReceiptJournal(lease,B)) {
                 Expect(journal.ReconcileCompletedAcknowledgements()==1,"Completed zero-row target was not reconciled");
@@ -242,6 +258,25 @@ public static class ReceiptTests {
                 Expect(journal.ReconcileCompletedAcknowledgements()==0,"Completed zero-row target replayed");
             }
             Expect(queue==File.ReadAllText(Queue(lease)) && marker==File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")),"Reconciliation changed completed effects");
+            Expect(queue.Contains("later-notification"),"A later notification was not kept pending");
+        });
+        Case("zero-row completion capacity preserves current proof",lease=>{
+            Directory.CreateDirectory(Path.GetDirectoryName(Queue(lease)));File.WriteAllText(Queue(lease),"");
+            File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"acked:handling:capacity-current\n");
+            var history=new StringBuilder("fm-wake-ack-completions-v1\n");
+            for(int i=0;i<1024;i++)history.Append("stored-").Append(i).Append('\n');
+            File.WriteAllText(CompletionHistory(lease),history.ToString());
+            string marker=File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down"));
+            Refuses(()=>ZeroRecovery(lease,"append"),"A full completion history allowed proof replacement");
+            Expect(marker==File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")) && File.ReadAllText(Queue(lease))=="","Capacity refusal changed current proof or queued new work");
+        });
+        Case("malformed zero-row completion history preserves current proof",lease=>{
+            Directory.CreateDirectory(Path.GetDirectoryName(Queue(lease)));File.WriteAllText(Queue(lease),"");
+            File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"acked:handling:malformed-current\n");
+            File.WriteAllText(CompletionHistory(lease),"unrecognized\n");
+            string marker=File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down"));
+            Refuses(()=>ZeroRecovery(lease,"append"),"Malformed completion history allowed proof replacement");
+            Expect(marker==File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")) && File.ReadAllText(Queue(lease))=="","Malformed-history refusal changed current proof or queued new work");
         });
         Console.WriteLine("RECEIPT_TESTS_PASS "+passed);return 0;
     }

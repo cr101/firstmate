@@ -11,7 +11,7 @@ export async function runCodexHost(options={}) {
  const env=options.env??process.env;
  const runtime=env.FM_PROBE_HOME,root=env.FM_PROBE_CODE_ROOT;
  const inputStream=options.input??process.stdin,outputStream=options.output??process.stdout,errorStream=options.error??process.stderr;
- const pause=options.pause??(ms=>new Promise(resolve=>setTimeout(resolve,ms)));
+ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  let closing=false,gate=null,server=null,alive=false,thread=null,activeTurn=null,ended=false;
  let lifecycle=null,terminal=null,announced=null,next=0,nativeWaiter=null,nativeTail=Promise.resolve();
  let socket=null,channel=null;

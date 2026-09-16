@@ -19,9 +19,9 @@ const launcher=path.join(code,'bin/fm-native-codex.ps1');
 command('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly']);
 const removedAlias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
 assert.notEqual(removedAlias.status,0,'The removed -Home alias was still accepted');
-function start(home,verify=true){
+function start(home,verify=true,env=process.env){
  const args=['-NoProfile','-File',launcher,'-Experimental','-OperationalHome',home,'-JqImage',image];if(verify)args.push('-VerifyOnly');
- const child=spawn('powershell.exe',args,{stdio:['pipe','pipe','pipe']});let stdout='',stderr='';
+ const child=spawn('powershell.exe',args,{stdio:['pipe','pipe','pipe'],env});let stdout='',stderr='';
  child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);child.stdin.on('error',()=>{});
  const done=new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',exit=>resolve({exit,stdout,stderr}));});
  return {child,done,home};
@@ -79,6 +79,19 @@ for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrup
  assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(residualHome,'owner-probe.json')),false);
 }
 records.push('orphan status and interrupted-close records refused before lease acquisition and preserved');
+const maskedHome=path.join(area,'bash-env-mask'),maskedStatus=path.join(maskedHome,'state/orphan.status'),mask=path.join(area,'bash-env-exit.sh');
+fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maskedStatus,'preserve masked residual state');fs.writeFileSync(mask,'exit 0\n');
+const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);
+assert.equal(fs.readFileSync(maskedStatus,'utf8'),'preserve masked residual state');assert.equal(fs.existsSync(path.join(maskedHome,'owner-probe.json')),false);
+records.push('ambient Bash startup hooks cannot bypass admission before lease acquisition');
+const customHome=path.join(area,'registered-custom'),customState=path.join(customHome,'state'),canary=path.join(customHome,'executed');
+fs.mkdirSync(customState,{recursive:true});fs.writeFileSync(path.join(customState,'custom.check.sh'),`#!/usr/bin/env bash\nprintf executed > "${posix(canary)}"\n`);
+fs.chmodSync(path.join(customState,'custom.check.sh'),0o700);
+const register=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(code,'bin/fm-check-register.sh')),'custom'],{env:{...process.env,FM_HOME:posix(customHome),MSYS:'winsymlinks:nativestrict'},encoding:'utf8',timeout:30000});
+assert.equal(register.status,0,register.stderr);
+const custom=start(customHome);custom.child.stdin.end();assert.notEqual((await bound(custom.done,custom,20000)).exit,0);
+assert.equal(fs.existsSync(canary),false);assert.equal(fs.existsSync(path.join(customHome,'owner-probe.json')),false);
+records.push('registered custom work is refused before lease acquisition without execution');
 for(const [name,contents] of [
  ['queued-backlog','## In flight\n\n## Queued\n- [ ] queued-work - preserved project work (repo: firstmate) (kind: ship)\n\n## Done\n'],
  ['unrecognized-backlog','# Backlog\n\nproject work in an unrecognized form\n'],

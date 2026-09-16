@@ -17,7 +17,7 @@ if(!dry&&process.env.FM_LIVE_NATIVE_CODEX!=='1')throw Error('Live model test req
 if(!dry){const preflight=read(path.join(dir,'bridge-preflight.json'));if(!preflight.passed||preflight.binaryHash!==createHash('sha256').update(fs.readFileSync(build.binary)).digest('hex'))throw Error('Run model-free bridge preflight for this binary first');}
 const home=path.join(build.root,'appserver-'+randomUUID());fs.mkdirSync(home);
 fs.writeFileSync(path.join(home,'build.json'),JSON.stringify(build,null,2));
-const script=path.join(build.root,'AppHost.mjs');
+const script=path.join(build.code,'AppHost.mjs');
 const leaseHome=path.join(home,'home');
 let startupNote=null;
 if(startupQueued){
@@ -32,8 +32,7 @@ const spec={home,leaseHome,executable:process.execPath,arguments:'"'+script+'"',
 if(startupQueued){spec.startupQueued=true;spec.startupNote=startupNote;}
 if(fault)spec.ackFault=fault;
 const file=path.join(home,'spec.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));
-const controllerEnv={...process.env,FM_PROBE_CODE_ROOT:repo};
-const run=spawnSync(build.binary,['run',file],{env:controllerEnv,encoding:'utf8',timeout:310000});
+const run=spawnSync(build.binary,['run',file],{env:process.env,encoding:'utf8',timeout:310000});
 fs.writeFileSync(path.join(home,'controller.stdout'),run.stdout||'');fs.writeFileSync(path.join(home,'controller.stderr'),run.stderr||'');
 fs.writeFileSync(path.join(dir,fault?`fault-${fault}-latest.json`:dry?'bridge-latest.json':'cycle-latest.json'),JSON.stringify({home,exit:run.status},null,2));
 console.log(JSON.stringify({home,exit:run.status,dry}));
@@ -58,7 +57,7 @@ if(fault) {
  const recovery=path.join(home,'recovery');fs.mkdirSync(recovery);
  const recoverySpec={home:recovery,leaseHome:spec.leaseHome,executable:build.binary,arguments:'sleep 100',timeoutSeconds:10,pipeAcl:'UserOnly'};
  const recoveryFile=path.join(recovery,'spec.json');fs.writeFileSync(recoveryFile,JSON.stringify(recoverySpec));
- const restarted=spawnSync(build.binary,['run',recoveryFile],{env:controllerEnv,encoding:'utf8',timeout:15000});
+ const restarted=spawnSync(build.binary,['run',recoveryFile],{env:process.env,encoding:'utf8',timeout:15000});
  fs.writeFileSync(path.join(recovery,'controller.stdout'),restarted.stdout||'');fs.writeFileSync(path.join(recovery,'controller.stderr'),restarted.stderr||'');
  if(restarted.status!==0)throw Error('Recovery controller failed');
  const recovered=read(path.join(recovery,'result.json'));

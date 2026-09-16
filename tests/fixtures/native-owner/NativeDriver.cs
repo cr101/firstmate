@@ -56,7 +56,7 @@ public static partial class NativeOwner {
         return 0;
     }
     static void RunFirstmate(string role,bool shouldSucceed) {
-        string root=Path.Combine(Path.GetDirectoryName(OwnExe),"firstmate");
+        string root=CodeRoot;
         string script=Path.Combine(root,shouldSucceed ? "exercise.sh" : "bin/fm-lock.sh").Replace('\\','/');
         using(var p=Process.Start(new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script)) { UseShellExecute=false,RedirectStandardOutput=!shouldSucceed,RedirectStandardError=!shouldSucceed })) {
             var stdout=shouldSucceed ? System.Threading.Tasks.Task.FromResult("") : p.StandardOutput.ReadToEndAsync(); var stderr=shouldSucceed ? System.Threading.Tasks.Task.FromResult("") : p.StandardError.ReadToEndAsync();
@@ -84,10 +84,11 @@ public static partial class NativeOwner {
     static int EnvironmentTests() {
         string directory=Path.Combine(Path.GetTempPath(),"fm-native-environment-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        string payload=Path.Combine(directory,"payload.js"),main=Path.Combine(directory,"main.js"),injected=Path.Combine(directory,"injected"),result=Path.Combine(directory,"result.json");
+        string payload=Path.Combine(directory,"payload.js"),bashMask=Path.Combine(directory,"bash-mask.sh"),main=Path.Combine(directory,"main.js"),injected=Path.Combine(directory,"injected"),result=Path.Combine(directory,"result.json");
         File.WriteAllText(payload,"require('fs').writeFileSync("+Json.Serialize(injected.Replace('\\','/'))+",'injected')");
+        File.WriteAllText(bashMask,"exit 0\n");
         File.WriteAllText(main,"const fs=require('fs');const denied=['NODE_OPTIONS','NODE_PATH','BASH_ENV','ENV','CLAUDE_PID','CLAUDECODE'];const leaked=Object.keys(process.env).filter(k=>denied.includes(k.toUpperCase())||k.toUpperCase().startsWith('FM_')||k.toUpperCase().startsWith('PI_')||k.toUpperCase().startsWith('NO_MISTAKES'));fs.writeFileSync("+Json.Serialize(result.Replace('\\','/'))+",JSON.stringify(leaked));");
-        var poison=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase){{"node_options","--require=\""+payload.Replace('\\','/')+"\""},{"node_path",directory},{"bash_env",payload},{"env",payload},{"claude_pid","123"},{"claudecode","1"},{"fm_poison","1"},{"pi_poison","1"},{"no_mistakes_poison","1"}};
+        var poison=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase){{"node_options","--require=\""+payload.Replace('\\','/')+"\""},{"node_path",directory},{"bAsH_eNv",bashMask},{"env",payload},{"claude_pid","123"},{"claudecode","1"},{"fm_poison","1"},{"pi_poison","1"},{"no_mistakes_poison","1"}};
         var original=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         try {
             foreach(var entry in poison){original[entry.Key]=Environment.GetEnvironmentVariable(entry.Key);Environment.SetEnvironmentVariable(entry.Key,entry.Value);}
@@ -102,6 +103,18 @@ public static partial class NativeOwner {
             if(File.Exists(injected)||leaked.Length!=5)throw new InvalidOperationException("Denied inherited environment reached the native host");
             foreach(string key in leaked)if(!key.StartsWith("FM_PROBE_",StringComparison.Ordinal))throw new InvalidOperationException("Unexpected inherited environment reached the native host");
             Console.WriteLine("PASS: inherited Windows environment denylist is case-insensitive");
+            string residual=Path.Combine(directory,"residual"),residualState=Path.Combine(residual,"state"),status=Path.Combine(residualState,"orphan.status");
+            Directory.CreateDirectory(residualState);File.WriteAllText(status,"preserve\n");
+            bool refused=false;try{EmptyFleet(residual);}catch(InvalidOperationException){refused=true;}
+            if(!refused||File.ReadAllText(status)!="preserve\n")throw new InvalidOperationException("Mixed-case BASH_ENV bypassed empty-home admission");
+            Console.WriteLine("PASS: fixed Bash admission ignores mixed-case ambient authority");
+            string registered=Path.Combine(directory,"registered"),registeredState=Path.Combine(registered,"state"),canary=Path.Combine(registered,"executed");
+            Directory.CreateDirectory(registeredState);
+            File.WriteAllText(Path.Combine(registeredState,"custom.check.sh"),"#!/usr/bin/env bash\nprintf executed > \""+canary.Replace('\\','/')+"\"\n");
+            File.WriteAllText(Path.Combine(registeredState,"custom.check-trust"),"fm-custom-check-v1\n"+new string('0',64)+"\n");
+            refused=false;try{EmptyFleet(registered);}catch(InvalidOperationException){refused=true;}
+            if(!refused||File.Exists(canary))throw new InvalidOperationException("Registered custom work passed admission or executed during inspection");
+            Console.WriteLine("PASS: registered custom checks are refused without execution");
             return 0;
         } finally {
             foreach(var entry in original)Environment.SetEnvironmentVariable(entry.Key,entry.Value);
@@ -138,7 +151,7 @@ public static partial class NativeOwner {
         int seconds = Convert.ToInt32(config["timeoutSeconds"]);
         if(config.ContainsKey("registeredHarness")) {
             string expected=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),@"npm\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe");
-            string host=Path.Combine(Path.GetDirectoryName(OwnExe),"AppHost.mjs");
+            string host=Path.Combine(CodeRoot,"AppHost.mjs");
             string node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");
             bool direct=(string)config["registeredHarness"]=="codex" && string.Equals(Path.GetFullPath(executable),Path.GetFullPath(expected),StringComparison.OrdinalIgnoreCase);
             bool adapter=(string)config["registeredHarness"]=="codex-app-server" && string.Equals(Path.GetFullPath(executable),Path.GetFullPath(node),StringComparison.OrdinalIgnoreCase) && arguments==Quote(host);
@@ -305,7 +318,7 @@ public static partial class NativeOwner {
             if(args.Length==3 && args[0]=="lease-check") return LeaseCheck(args[1],args[2]);
             if(args.Length==2 && args[0]=="notification-operation") {
                 if(args[1]!="check" && args[1]!="ack") throw new ArgumentException("Unsupported notification operation");
-                string script=Path.Combine(Path.GetDirectoryName(OwnExe),"firstmate","notification-"+args[1]+".sh");
+                string script=Path.Combine(CodeRoot,"notification-"+args[1]+".sh");
                 using(var operation=Process.Start(new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script)) {UseShellExecute=false})) {
                     if(!operation.WaitForExit(60000)) throw new IOException("Notification operation exceeded its bound");
                     return operation.ExitCode;

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Usage: FM_HOME=<home> ack-evidence.sh capture-json|preflight-token|verify-token|verify-legacy|acknowledge-token
+# Required environment: FM_HOME; token modes read their evidence from standard input.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export FM_HOME
@@ -62,40 +64,6 @@ case "${1:-}" in
     printf '],"ownerEvidence":"%s"}\n' "$FM_WAKE_ACK_EVIDENCE_TOKEN"
     fm_wake_ack_evidence_clear
     ;;
-  capture-token)
-    fm_wake_ack_evidence_capture
-    printf '%s\n' "$FM_WAKE_ACK_EVIDENCE_TOKEN"
-    fm_wake_ack_evidence_clear
-    ;;
-  capture-payload)
-    mapfile -t expected < <(node -e '
-      let input="";
-      process.stdin.setEncoding("utf8");
-      process.stdin.on("data",chunk=>input+=chunk);
-      process.stdin.on("end",()=>{
-        const value=JSON.parse(input);
-        if(!value||typeof value!=="object"||Array.isArray(value))throw Error("invalid payload");
-        const seq=String(value.seq),generation=value.generation;
-        const notes=value.notes===undefined?[value.note]:value.notes;
-        if(!/^\d+$/.test(seq)||typeof generation!=="string"||!Array.isArray(notes)||notes.some(note=>typeof note!=="string"))throw Error("invalid payload target");
-        process.stdout.write([seq,generation,...new Set(notes)].join("\n")+"\n");
-      });
-    ')
-    [ "${#expected[@]}" -ge 2 ] || exit 2
-    fm_wake_ack_evidence_capture
-    [ "${expected[0]}" = "$FM_WAKE_ACK_EVIDENCE_CUTOFF" ] \
-      && [ "${expected[1]}" = "$FM_WAKE_ACK_EVIDENCE_GENERATION" ] || exit 2
-    if [ "${#expected[@]}" -gt 2 ]; then
-      printf '%s\n' "${expected[@]:2}" | LC_ALL=C sort -u > "$FM_WAKE_ACK_EVIDENCE_NOTES.expected"
-    else
-      : > "$FM_WAKE_ACK_EVIDENCE_NOTES.expected"
-    fi
-    cut -f1 "$FM_WAKE_ACK_EVIDENCE_NOTES" | LC_ALL=C sort -u > "$FM_WAKE_ACK_EVIDENCE_NOTES.actual"
-    cmp -s "$FM_WAKE_ACK_EVIDENCE_NOTES.expected" "$FM_WAKE_ACK_EVIDENCE_NOTES.actual" || exit 2
-    rm -f -- "$FM_WAKE_ACK_EVIDENCE_NOTES.expected" "$FM_WAKE_ACK_EVIDENCE_NOTES.actual"
-    printf '%s\n' "$FM_WAKE_ACK_EVIDENCE_TOKEN"
-    fm_wake_ack_evidence_clear
-    ;;
   preflight-token)
     token=$(read_token)
     fm_wake_ack_evidence_precondition "$token"
@@ -114,7 +82,7 @@ case "${1:-}" in
     fm_wake_ack_evidence_acknowledge "$token"
     ;;
   *)
-    printf 'usage: ack-evidence.sh capture-json|capture-token|capture-payload|preflight-token|verify-token|verify-legacy|acknowledge-token\n' >&2
+    printf 'usage: ack-evidence.sh capture-json|preflight-token|verify-token|verify-legacy|acknowledge-token\n' >&2
     exit 2
     ;;
 esac
