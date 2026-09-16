@@ -147,10 +147,21 @@ public static partial class NativeOwner {
             if(!refused||File.ReadAllText(turnEndedRecord)!="preserve\n"||File.Exists(Path.Combine(turnEnded,"owner-probe.json"))||File.Exists(Path.Combine(turnEndedState,".lock")))throw new InvalidOperationException("Residual turn-end work passed admission or caused lease activity");
             Console.WriteLine("PASS: residual turn-end work is preserved without lease activity");
             string supported=Path.Combine(directory,"supported-notification"),supportedState=Path.Combine(supported,"state"),supportedInbox=Path.Combine(supportedState,"inbox"),supportedNote=Path.Combine(supportedInbox,"note-id.note"),supportedQueue=Path.Combine(supportedState,".wake-queue"),supportedMarker=Path.Combine(supportedState,".watcher-down"),supportedBody="preserve notification\n";
-            Directory.CreateDirectory(supportedInbox);File.WriteAllText(supportedNote,supportedBody);File.WriteAllText(supportedQueue,"1\t1\tcheck\tinbox:note-id\tcaptain inbox note\n");File.WriteAllText(supportedMarker,"pending:handling:supported\n");
+            Directory.CreateDirectory(supportedInbox);File.WriteAllText(supportedNote,supportedBody);File.WriteAllText(Path.Combine(supportedState,".wake-queue.seq"),"1\n");File.WriteAllText(supportedQueue,"1\t1\tcheck\tinbox:note-id\tcheck: captain inbox note note-id - native admission test\n");File.WriteAllText(supportedMarker,"pending:downtime:supported\n");
+            EmptyFleet(supported);
+            File.WriteAllText(Path.Combine(supportedState,".main-eligible-rows"),"1\n");File.WriteAllText(supportedMarker,"pending:handling:supported\n");
             EmptyFleet(supported);
             if(File.ReadAllText(supportedNote)!=supportedBody||!File.ReadAllText(supportedQueue).Contains("inbox:note-id")||File.ReadAllText(supportedMarker)!="pending:handling:supported\n"||File.Exists(Path.Combine(supported,"owner-probe.json")))throw new InvalidOperationException("Supported top-level notification state was changed or leased during admission");
             Console.WriteLine("PASS: supported top-level notification state remains admissible and unchanged");
+            foreach(string shape in new [] {"unsupported","malformed"}) {
+                string wakeHome=Path.Combine(directory,shape+"-wake"),wakeState=Path.Combine(wakeHome,"state"),wakeQueue=Path.Combine(wakeState,".wake-queue"),wakeMarker=Path.Combine(wakeState,".watcher-down");
+                Directory.CreateDirectory(wakeState);File.WriteAllText(Path.Combine(wakeState,".wake-queue.seq"),"1\n");File.WriteAllText(wakeMarker,"pending:downtime:preserve\n");
+                File.WriteAllText(wakeQueue,shape=="unsupported" ? "1\t1\tcheck\torphan-work\tcheck: unsupported residual work\n" : "malformed wake row\n");
+                string queueBefore=File.ReadAllText(wakeQueue),markerBefore=File.ReadAllText(wakeMarker);
+                refused=false;try{EmptyFleet(wakeHome);using(var lease=new NativeHomeLease(wakeHome)){} }catch(InvalidOperationException){refused=true;}
+                if(!refused||File.ReadAllText(wakeQueue)!=queueBefore||File.ReadAllText(wakeMarker)!=markerBefore||File.Exists(Path.Combine(wakeHome,"owner-probe.json")))throw new InvalidOperationException("Unsupported wake state passed admission, changed, or acquired a lease");
+            }
+            Console.WriteLine("PASS: unsupported and malformed wake state is preserved and refused before lease acquisition");
             return 0;
         } finally {
             foreach(var entry in original)Environment.SetEnvironmentVariable(entry.Key,entry.Value);

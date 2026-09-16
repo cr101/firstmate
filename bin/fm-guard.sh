@@ -170,8 +170,9 @@ fi
 # grace-based predicate (bin/fm-supervision-lib.sh), which owns what needs
 # supervision.
 fm_supervision_status "$STATE" "$GRACE"
-reason_count=$FM_SUP_REASON_COUNT
-reason_label=$FM_SUP_REASON_LABEL
+in_flight=$FM_SUP_IN_FLIGHT
+sources=$FM_SUP_SOURCES
+checks=$FM_SUP_CHECKS
 needed=$FM_SUP_NEEDED
 beacon_desc=$FM_SUP_BEACON_DESC
 fm_watcher_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$FM_HOME" "$FM_ROOT"
@@ -233,8 +234,12 @@ if [ "$watcher_healthy" = false ]; then
       else
         watcher_cause=$(printf 'no watcher has a fresh beacon (last beat: %s, grace %ss)' "$beacon_desc" "$GRACE")
       fi
-      if [ "$reason_count" -gt 0 ]; then
-        printf '●  %s %s, but %s.\n' "$reason_count" "$reason_label" "$watcher_cause"
+      if [ "$in_flight" -gt 0 ]; then
+        printf '●  %s task(s) in flight, but %s.\n' "$in_flight" "$watcher_cause"
+      elif [ "$sources" -gt 0 ]; then
+        printf '●  %s process-event source(s) registered, but %s.\n' "$sources" "$watcher_cause"
+      elif [ "$checks" -gt 0 ]; then
+        printf '●  %s registered custom check(s), but %s.\n' "$checks" "$watcher_cause"
       else
         printf '●  X-mode relay polling needs supervision, but %s.\n' "$watcher_cause"
       fi

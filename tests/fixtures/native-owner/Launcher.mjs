@@ -14,7 +14,7 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function command(exe,args){const result=spawnSync(exe,args,{encoding:'utf8',timeout:120000});if(result.status!==0)throw Error(result.stderr||result.stdout);return result;}
 command('git',['-c','core.symlinks=true','clone','--quiet','--no-local','--single-branch',repo,code]);
 fs.cpSync(path.join(repo,'bin/native-owner'),path.join(code,'bin/native-owner'),{recursive:true});
-for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
+for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh','fm-backlog-transition-lib.sh','fm-supervision-lib.sh','fm-wake-lib.sh','fm-startup-network.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
 const launcher=path.join(code,'bin/fm-native-codex.ps1');
 command('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly']);
 const removedAlias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
@@ -79,6 +79,16 @@ for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrup
  assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(residualHome,'owner-probe.json')),false);
 }
 records.push('orphan status, interrupted-close, and turn-end records refused before lease acquisition and preserved');
+const queuedHome=path.join(area,'supported-queued-restart'),queuedNote=enqueue(queuedHome,'Preserve this supported notification across a native restart.');
+const queuedBody=fs.readFileSync(path.join(queuedHome,'state/inbox',queuedNote+'.note'),'utf8');
+const queuedSession=start(queuedHome);const queuedReady=await ready(queuedSession);queuedSession.child.stdin.end();
+assert.equal((await bound(queuedSession.done,queuedSession,20000)).exit,0);
+assert.equal(fs.readFileSync(path.join(queuedHome,'state/inbox',queuedNote+'.note'),'utf8'),queuedBody);
+assert(fs.readFileSync(path.join(queuedHome,'state/.wake-queue'),'utf8').includes('inbox:'+queuedNote));
+const queuedRestart=start(queuedHome);await ready(queuedRestart,queuedReady.owner.generation);queuedRestart.child.stdin.end();
+assert.equal((await bound(queuedRestart.done,queuedRestart,20000)).exit,0);
+assert.equal(fs.readFileSync(path.join(queuedHome,'state/inbox',queuedNote+'.note'),'utf8'),queuedBody);
+records.push('producer-created inbox and native handling recovery remain admissible across restart');
 const maskedHome=path.join(area,'bash-env-mask'),maskedStatus=path.join(maskedHome,'state/orphan.status'),mask=path.join(area,'bash-env-exit.sh');
 fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maskedStatus,'preserve masked residual state');fs.writeFileSync(mask,'exit 0\n');
 const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);
@@ -108,6 +118,16 @@ for(const [name,relative] of [['relay-config','config/x-mode.env'],['relay-watch
  assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(relayHome,'owner-probe.json')),false);
 }
 records.push('generated Relay state refused before lease acquisition and preserved');
+for(const [name,row] of [
+ ['unsupported-wake','1\t1\tcheck\torphan-work\tcheck: unsupported residual work\n'],
+ ['malformed-wake','malformed wake row\n'],
+]){
+ const wakeHome=path.join(area,name),wakeState=path.join(wakeHome,'state'),queue=path.join(wakeState,'.wake-queue'),marker=path.join(wakeState,'.watcher-down');
+ fs.mkdirSync(wakeState,{recursive:true});fs.writeFileSync(path.join(wakeState,'.wake-queue.seq'),'1\n');fs.writeFileSync(queue,row);fs.writeFileSync(marker,'pending:downtime:preserve\n');
+ const wakeSession=start(wakeHome);wakeSession.child.stdin.end();assert.notEqual((await bound(wakeSession.done,wakeSession,20000)).exit,0);
+ assert.equal(fs.readFileSync(queue,'utf8'),row);assert.equal(fs.readFileSync(marker,'utf8'),'pending:downtime:preserve\n');assert.equal(fs.existsSync(path.join(wakeHome,'owner-probe.json')),false);
+}
+records.push('unsupported and malformed wake records refused unchanged before lease acquisition');
 const outside=path.join(repo,'data/native-launcher',path.basename(area)+'-outside');
 assert.equal(fs.existsSync(outside),false);
 const external=start(outside);external.child.stdin.end();assert.notEqual((await bound(external.done,external,20000)).exit,0);assert.equal(fs.existsSync(outside),false);

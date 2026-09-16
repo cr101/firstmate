@@ -358,9 +358,7 @@ EOF
     fi
     if [ "$claim_live" -eq 0 ]; then
       if report_requires_wake "$state"; then
-        fm_wake_append check startup-network \
-          "check: startup-network: deferred startup network checks finished ($state); read them with $FM_ROOT/bin/fm-startup-network.sh report" \
-          || true
+        fm_wake_append_startup_network "$state" || true
       fi
       fm_lock_release "$PUBLISH_LOCK"
       return 0
@@ -375,9 +373,7 @@ EOF
     return 0
   fi
   if report_requires_wake "$state"; then
-    fm_wake_append check startup-network \
-      "check: startup-network: deferred startup network checks finished ($state); read them with $FM_ROOT/bin/fm-startup-network.sh report" \
-      || true
+    fm_wake_append_startup_network "$state" || true
   fi
   fm_lock_release "$PUBLISH_LOCK"
 }

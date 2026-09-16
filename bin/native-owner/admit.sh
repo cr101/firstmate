@@ -13,8 +13,15 @@ if ! fm_backlog_empty_fleet_preflight "$FM_HOME/state" "$FM_HOME/data"; then
   printf '%s\n' "${FM_BACKLOG_EMPTY_ERROR:-the home contains work-bearing records}" >&2
   exit 2
 fi
-fm_supervision_status "$FM_HOME/state"
-if [ "$FM_SUP_NEEDED" = true ]; then
-  printf 'the home contains registered work requiring supervision\n' >&2
+if ! fm_supervision_residual_inputs_absent "$FM_HOME/state"; then
+  printf '%s\n' "${FM_SUP_RESIDUAL_ERROR:-the home contains residual supervision work}" >&2
   exit 2
+fi
+if [ -e "$FM_HOME/state" ] || [ -L "$FM_HOME/state" ]; then
+  export FM_STATE_OVERRIDE="$FM_HOME/state"
+  . bin/fm-wake-lib.sh
+  if ! fm_wake_native_empty_fleet_preflight "$FM_HOME/state"; then
+    printf '%s\n' "${FM_WAKE_NATIVE_ADMISSION_ERROR:-the home contains unsupported wake state}" >&2
+    exit 2
+  fi
 fi

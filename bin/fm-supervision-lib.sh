@@ -35,19 +35,10 @@ fm_sup_stat_mtime() {
 #                         sweep's call at execution time, and a home whose check
 #                         no longer validates needs the watcher precisely so the
 #                         sweep can report the rejection instead of going quiet.
-#   FM_SUP_CHECK_INPUTS   count of state/*.check.sh inputs, including relay,
-#                         registered, and unregistered checks
-#   FM_SUP_PENDING_REPLIES count of parent-owned pending-reply inputs
-#   FM_SUP_RECONCILE_REQUESTS count of secondmate reconcile-notify inputs
-#   FM_SUP_TURN_ENDS      count of state/*.turn-ended watcher inputs
-#   FM_SUP_NEEDED         true/false - in-flight work, a state check input, a
+#   FM_SUP_NEEDED         true/false - in-flight work, an X-mode relay poll, a
 #                         registered event source (a source is a wait on an
 #                         external process, not a task, so it has no metadata),
-#                         a pending reply, a reconcile-notify request, or a
-#                         turn-ended notification
-#   FM_SUP_REASON_COUNT   count for the highest-priority active reason, or zero
-#                         for Relay polling
-#   FM_SUP_REASON_LABEL   caller-neutral label for that selected reason
+#                         or a registered custom check
 #   FM_SUP_WATCHER_FRESH  true/false - a watcher beacon within the grace window
 #   FM_SUP_BEACON_DESC    human-readable beacon age, for banners ("never" if absent)
 #   FM_SUP_QUEUE_PENDING  true/false - state/.wake-queue has unread records
@@ -72,7 +63,7 @@ fm_sup_directory_entry_count() {
 }
 
 fm_supervision_status() {
-  local state=$1 grace=${2:-${FM_GUARD_GRACE:-300}} meta source check turn_end id beat m age
+  local state=$1 grace=${2:-${FM_GUARD_GRACE:-300}} meta source check id beat m age
   FM_SUP_IN_FLIGHT=0
   FM_SUP_NEEDED=false
   FM_SUP_WATCHER_FRESH=false
@@ -89,12 +80,8 @@ fm_supervision_status() {
     FM_SUP_SOURCES=$((FM_SUP_SOURCES + 1))
   done
   FM_SUP_CHECKS=0
-  FM_SUP_CHECK_INPUTS=0
   for check in "$state"/*.check.sh; do
-    if [ ! -e "$check" ] && [ ! -L "$check" ]; then
-      continue
-    fi
-    FM_SUP_CHECK_INPUTS=$((FM_SUP_CHECK_INPUTS + 1))
+    [ -e "$check" ] || continue
     id=${check##*/}
     id=${id%.check.sh}
     if [ "$id" = x-watch ]; then
@@ -103,46 +90,11 @@ fm_supervision_status() {
     [ -e "$state/$id.check-trust" ] || continue
     FM_SUP_CHECKS=$((FM_SUP_CHECKS + 1))
   done
-  FM_SUP_PENDING_REPLIES=$(fm_sup_directory_entry_count "$state/pending-replies")
-  FM_SUP_RECONCILE_REQUESTS=$(fm_sup_directory_entry_count "$state/reconcile-notify")
-  FM_SUP_TURN_ENDS=0
-  for turn_end in "$state"/*.turn-ended; do
-    if [ -e "$turn_end" ] || [ -L "$turn_end" ]; then
-      FM_SUP_TURN_ENDS=$((FM_SUP_TURN_ENDS + 1))
-    fi
-  done
   if [ "$FM_SUP_IN_FLIGHT" -gt 0 ] \
-    || [ "$FM_SUP_TURN_ENDS" -gt 0 ] \
+    || [ -f "$state/x-watch.check.sh" ] \
     || [ "$FM_SUP_SOURCES" -gt 0 ] \
-    || [ "$FM_SUP_CHECK_INPUTS" -gt 0 ] \
-    || [ "$FM_SUP_PENDING_REPLIES" -gt 0 ] \
-    || [ "$FM_SUP_RECONCILE_REQUESTS" -gt 0 ]; then
+    || [ "$FM_SUP_CHECKS" -gt 0 ]; then
     FM_SUP_NEEDED=true
-  fi
-  if [ "$FM_SUP_IN_FLIGHT" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_IN_FLIGHT
-    FM_SUP_REASON_LABEL='task(s) in flight'
-  elif [ "$FM_SUP_TURN_ENDS" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_TURN_ENDS
-    FM_SUP_REASON_LABEL='turn-end notification(s) pending'
-  elif [ "$FM_SUP_SOURCES" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_SOURCES
-    FM_SUP_REASON_LABEL='process-event source(s) registered'
-  elif [ "$FM_SUP_CHECKS" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_CHECKS
-    FM_SUP_REASON_LABEL='registered custom check(s)'
-  elif [ "$FM_SUP_CHECK_INPUTS" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_CHECK_INPUTS
-    FM_SUP_REASON_LABEL='state check input(s)'
-  elif [ "$FM_SUP_PENDING_REPLIES" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_PENDING_REPLIES
-    FM_SUP_REASON_LABEL='pending secondmate reply record(s)'
-  elif [ "$FM_SUP_RECONCILE_REQUESTS" -gt 0 ]; then
-    FM_SUP_REASON_COUNT=$FM_SUP_RECONCILE_REQUESTS
-    FM_SUP_REASON_LABEL='secondmate reconcile request(s)'
-  else
-    FM_SUP_REASON_COUNT=0
-    FM_SUP_REASON_LABEL='X-mode relay polling'
   fi
 
   beat="$state/.last-watcher-beat"
@@ -161,6 +113,25 @@ fm_supervision_status() {
   # shellcheck disable=SC2034 # Read by callers (fm-guard.sh) after sourcing.
   [ -s "$state/.wake-queue" ] && FM_SUP_QUEUE_PENDING=true
   return 0
+}
+
+FM_SUP_RESIDUAL_ERROR=
+fm_supervision_residual_inputs_absent() {  # <state-dir>
+  local state=$1 record count
+  FM_SUP_RESIDUAL_ERROR=
+  for record in "$state"/*.check.sh "$state"/*.check-trust "$state"/*.turn-ended; do
+    if [ -e "$record" ] || [ -L "$record" ]; then
+      FM_SUP_RESIDUAL_ERROR="supervision input is present at $record"
+      return 1
+    fi
+  done
+  for record in "$state/pending-replies" "$state/reconcile-notify"; do
+    count=$(fm_sup_directory_entry_count "$record")
+    if [ "$count" -gt 0 ]; then
+      FM_SUP_RESIDUAL_ERROR="supervision input is present under $record"
+      return 1
+    fi
+  done
 }
 
 # fm_supervision_needed <state-dir> [grace-seconds]
