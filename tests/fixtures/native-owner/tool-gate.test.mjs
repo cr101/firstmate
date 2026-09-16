@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createNotificationGate} from '../../../bin/native-owner/codex-tool-gate.mjs';
+import {confirmAutomaticNotificationOffer,createNotificationGate} from '../../../bin/native-owner/codex-tool-gate.mjs';
 const message={receipt:'receipt',challenge:'observed',message:'Controlled message',checkpointExit:124};
 function fixture(operate) {
  const calls=[];let alive=true;
@@ -103,6 +103,22 @@ test('notification arriving after cancellation remains available next turn',asyn
  assert.equal(recovered.success,true);assert.equal(recovered.value.receipt,'receipt');assert.equal(calls.length,1);
 });
 test('operation failure is not reported as success and cannot be blindly retried',async()=>{
- const {gate,calls}=fixture(()=>{throw Error('partial operation requires reconciliation');});
- assert.equal((await gate.handle(check())).success,false);assert.equal((await gate.handle(check({callId:'retry'}))).success,false);assert.equal(calls.length,1);
+  const {gate,calls}=fixture(()=>{throw Error('partial operation requires reconciliation');});
+  assert.equal((await gate.handle(check())).success,false);assert.equal((await gate.handle(check({callId:'retry'}))).success,false);assert.equal(calls.length,1);
+});
+test('completed prose-only automatic turn preserves the unoffered receipt',()=>{
+ const {gate}=fixture();gate.endTurn('primary','turn');
+ assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt'),/durable work was preserved/);
+});
+for(const [name,request] of [
+ ['denied',check({namespace:'other'})],
+ ['malformed',check({arguments:null})],
+])test(`completed automatic turn with a ${name} check preserves the receipt`,async()=>{
+ const {gate}=fixture();assert.equal((await gate.handle(request)).success,false);gate.endTurn('primary','turn');
+ assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt'),/durable work was preserved/);
+});
+test('completed automatic turn suppresses only the exact successfully offered receipt',async()=>{
+ const {gate}=fixture();assert.equal((await gate.handle(check())).success,true);gate.endTurn('primary','turn');
+ assert.equal(confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt'),true);
+ assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'other'));
 });

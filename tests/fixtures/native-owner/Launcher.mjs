@@ -46,7 +46,8 @@ function enqueue(home,message){
  const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export PATH="$1/bin/native-owner/tools:/usr/bin:/bin:$PATH"; export FM_HOME; FM_HOME=$(cygpath -u "$3"); exec /usr/bin/bash "$1/bin/fm-inbox.sh" note "$2"','launcher-test',posix(code),message,home],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));return result.stdout.trim().split(/\s+/)[1];
 }
-const home=path.join(area,'home');
+const home=path.join(area,'home');fs.mkdirSync(path.join(home,'data'),{recursive:true});
+fs.writeFileSync(path.join(home,'data/backlog.md'),'## In flight\n\n## Queued\n\n## Done\n');
 const first=start(home);const initial=await ready(first);console.error('first ready',area);
 const competitor=start(home);competitor.child.stdin.end();const refused=await bound(competitor.done,competitor,20000);
 console.error('competitor returned',refused);assert.notEqual(refused.exit,0);assert.equal(read(path.join(home,'owner-probe.json')).generation,initial.owner.generation);
@@ -66,6 +67,15 @@ const populated=path.join(area,'populated');fs.mkdirSync(path.join(populated,'st
 const blocked=start(populated);blocked.child.stdin.end();assert.notEqual((await bound(blocked.done,blocked,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(populated,'state/work.meta'),'utf8'),'preserve');assert.equal(fs.existsSync(path.join(populated,'owner-probe.json')),false);
 records.push('populated home refused without changing its records');
+for(const [name,contents] of [
+ ['queued-backlog','## In flight\n\n## Queued\n- [ ] queued-work - preserved project work (repo: firstmate) (kind: ship)\n\n## Done\n'],
+ ['unrecognized-backlog','# Backlog\n\nproject work in an unrecognized form\n'],
+]){
+ const backlogHome=path.join(area,name),backlog=path.join(backlogHome,'data/backlog.md');fs.mkdirSync(path.dirname(backlog),{recursive:true});fs.writeFileSync(backlog,contents);
+ const refusedBacklog=start(backlogHome);refusedBacklog.child.stdin.end();assert.notEqual((await bound(refusedBacklog.done,refusedBacklog,20000)).exit,0);
+ assert.equal(fs.readFileSync(backlog,'utf8'),contents);assert.equal(fs.existsSync(path.join(backlogHome,'owner-probe.json')),false);
+}
+records.push('queued and unrecognized backlogs refused before lease acquisition and preserved');
 for(const [name,relative] of [['relay-config','config/x-mode.env'],['relay-watch','state/x-watch.check.sh']]){
  const relayHome=path.join(area,name),record=path.join(relayHome,relative),contents='preserve relay state';
  fs.mkdirSync(path.dirname(record),{recursive:true});fs.writeFileSync(record,contents);

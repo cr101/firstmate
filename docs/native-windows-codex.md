@@ -2,7 +2,7 @@
 
 This explicit opt-in launcher is a restricted experimental candidate, not an installed runtime backend or a production-ready integration.
 Ordinary startup never selects it, and it does not install hooks, alter saved or global Codex settings, pull images, or select a default backend.
-[`verification/runtime-backends.md`](verification/runtime-backends.md#experimental-native-windows-ownership-candidate) records the dated empirical evidence and refresh commands.
+[`verification/runtime-backends.md`](verification/runtime-backends.md#experimental-native-windows-ownership-candidate) provides the verification refresh entry points; no current-build output is recorded there yet.
 
 ## Setup
 

@@ -6,7 +6,7 @@ import path from 'node:path';
 import net from 'node:net';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {createNotificationGate} from './codex-tool-gate.mjs';
+import {confirmAutomaticNotificationOffer,createNotificationGate} from './codex-tool-gate.mjs';
 import {createHostLifecycle,reconciliationWarning} from './host-lifecycle.mjs';
 import {discoverMcpServerNames,isolatedAppServerArgs,verifyExternalToolConfiguration,verifyExternalToolIsolation} from './app-server-policy.mjs';
 const runtime=process.env.FM_PROBE_HOME,root=process.env.FM_PROBE_CODE_ROOT;
@@ -179,7 +179,7 @@ try {
    if(result.operationState==='delivered'&&result.notification.receipt!==announced){
     const receipt=result.notification.receipt;
     const handled=await turn('A new durable notification is available. Read it with fm_notification_check, handle it within the available authority, and acknowledge only if fully handled.');
-    if(!closing&&alive&&handled?.status==='completed')announced=receipt;
+    if(!closing&&alive&&confirmAutomaticNotificationOffer(gate,thread,handled,receipt))announced=receipt;
     else if(!closing&&alive&&handled?.status==='interrupted')await pause(1000);
    }
    else await pause(1000);

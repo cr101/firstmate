@@ -13,9 +13,19 @@ using System.Threading;
 public static partial class NativeOwner {
     [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int kind);
     static string CodeRoot { get { return Path.GetDirectoryName(Path.GetDirectoryName(OwnExe)); } }
+    static void EmptyBacklog(string home) {
+        string data=Path.Combine(home,"data"),backlog=Path.Combine(data,"backlog.md");
+        if(!Directory.Exists(data)||Directory.GetFileSystemEntries(data,"backlog.md").Length==0)return;
+        if(!File.Exists(backlog))throw new InvalidOperationException("This experimental launcher requires a canonical empty backlog; the existing backlog was preserved");
+        string content;
+        try {content=File.ReadAllText(backlog,new UTF8Encoding(false,true));}
+        catch(Exception error){throw new InvalidOperationException("This experimental launcher could not validate the existing backlog; it was preserved",error);}
+        if(content!="## In flight\n\n## Queued\n\n## Done\n")throw new InvalidOperationException("This experimental launcher requires a canonical empty backlog; the existing backlog was preserved");
+    }
     static void EmptyFleet(string home) {
         string state=Path.Combine(home,"state"),projects=Path.Combine(home,"projects");
         if((Directory.Exists(state)&&Directory.GetFiles(state,"*.meta").Length!=0) || (Directory.Exists(projects)&&Directory.GetFileSystemEntries(projects).Length!=0) || File.Exists(Path.Combine(home,"data","secondmates.md")) || File.Exists(Path.Combine(home,"data","projects.md")) || File.Exists(Path.Combine(home,".env")) || File.Exists(Path.Combine(home,"config","x-mode.env")) || File.Exists(Path.Combine(state,"x-watch.check.sh")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
+        EmptyBacklog(home);
     }
     static int Launch(string selectedHome) {
         string home=Path.GetFullPath(selectedHome), node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");

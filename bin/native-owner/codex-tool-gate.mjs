@@ -13,6 +13,7 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
   let challenge = null;
   let acknowledged = false;
   let offered = null;
+  const offers = new Map();
   const seen = new Set();
   const retiredTurns = new Set();
   const deny = reason => ({ success: false, value: { denied: reason } });
@@ -52,7 +53,10 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
         if (Object.keys(args).length) return deny('invalid-arguments');
         // Redelivery is read-only: cancellation or a lost response must not
         // strand pending work or start another native check before handling it.
-        if (receipt && !acknowledged) return { success: true, value: { ...offered } };
+        if (receipt && !acknowledged) {
+          offers.set(params.turnId, receipt);
+          return { success: true, value: { ...offered } };
+        }
       } else if (params.tool === 'fm_notification_ack') {
         if (Object.keys(args).sort().join(',') !== 'observed,receipt' || !receipt ||
             args.receipt !== receipt || args.observed !== challenge) {
@@ -85,6 +89,7 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
           acknowledged = false;
           offered = Object.freeze({ message: note.message, receipt, challenge, checkpointExit: note.checkpointExit });
           if (!valid(params)) return deny('wrong-thread-turn-or-replay');
+          offers.set(params.turnId, receipt);
           return { success: true, value: { ...offered } };
         }
         const result = await operate('ack', { receipt, observed: args.observed });
@@ -101,5 +106,16 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
         busy = false;
       }
     },
+    wasOffered(thread, turn, expectedReceipt) {
+      return thread === primaryThread && offers.get(turn) === expectedReceipt;
+    },
   });
+}
+
+export function confirmAutomaticNotificationOffer(gate, thread, turn, receipt) {
+  if (turn?.status !== 'completed') return false;
+  if (!gate?.wasOffered(thread, turn.id, receipt)) {
+    throw new Error('Automatic notification turn completed without receiving its pending receipt; durable work was preserved');
+  }
+  return true;
 }
