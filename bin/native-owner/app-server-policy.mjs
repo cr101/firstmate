@@ -1,5 +1,40 @@
 import {spawn} from 'node:child_process';
 
+const MAX_MCP_STATUS_PAGES=256;
+
+function isRecord(value) {
+ return value!==null&&typeof value==='object'&&!Array.isArray(value);
+}
+
+function validInstalledApp(value) {
+ return isRecord(value)&&typeof value.id==='string'&&(value.runtimeName===null||typeof value.runtimeName==='string')&&typeof value.enabled==='boolean'&&typeof value.callable==='boolean';
+}
+
+function validMcpServerStatus(value) {
+ return isRecord(value)&&typeof value.name==='string'&&
+  (value.runtimeStatus===null||['notStarted','starting','connected','authenticationRequired','failed','cancelled','disabled'].includes(value.runtimeStatus))&&
+  (value.pluginId===null||typeof value.pluginId==='string')&&
+  (value.serverInfo===null||isRecord(value.serverInfo))&&
+  isRecord(value.tools)&&(value.toolsError===null||typeof value.toolsError==='string')&&
+  Array.isArray(value.resources)&&Array.isArray(value.resourceTemplates)&&
+  ['unknown','unsupported','notLoggedIn','bearerToken','oAuth'].includes(value.authStatus);
+}
+
+async function readMcpServerStatuses(request) {
+ const statuses=[],seenCursors=new Set();
+ let cursor=null;
+ for(let page=0;page<MAX_MCP_STATUS_PAGES;page++){
+  const response=await request('mcpServerStatus/list',{cursor,limit:100,detail:'toolsAndAuthOnly'});
+  if(!isRecord(response)||!Array.isArray(response.data)||response.data.some(status=>!validMcpServerStatus(status))||(response.nextCursor!==null&&typeof response.nextCursor!=='string'))throw Error('Invalid MCP server status response');
+  statuses.push(...response.data);
+  if(response.nextCursor===null)return statuses;
+  if(seenCursors.has(response.nextCursor))throw Error('Repeated MCP server status cursor');
+  seenCursors.add(response.nextCursor);
+  cursor=response.nextCursor;
+ }
+ throw Error('MCP server status pagination exceeded its bound');
+}
+
 function uniqueNames(value) {
  if(!Array.isArray(value)||value.length>256||value.some(name=>typeof name!=='string'||!name.length||name.length>256))throw Error('Invalid inherited MCP server catalog');
  const names=[...new Set(value)];
@@ -53,14 +88,14 @@ export async function verifyExternalToolConfiguration(request,mcpServerNames) {
 
 export async function verifyExternalToolIsolation(request,threadId,configuration) {
  const installed=await request('app/installed',{threadId,forceRefresh:false});
- const servers=await request('mcpServerStatus/list',{cursor:null,limit:100,detail:'toolsAndAuthOnly'});
- const apps=Array.isArray(installed.apps)?installed.apps:[];
- const mcpServers=Array.isArray(servers.data)?servers.data:[];
- const activeMcpServers=mcpServers.filter(server=>server.runtimeStatus!==null||server.serverInfo!==null||server.toolsError!==null||Object.keys(server.tools??{}).length||(server.resources??[]).length||(server.resourceTemplates??[]).length);
+ if(!isRecord(installed)||!Array.isArray(installed.apps)||installed.apps.some(app=>!validInstalledApp(app)))throw Error('Invalid installed app catalog response');
+ const apps=installed.apps;
+ const mcpServers=await readMcpServerStatuses(request);
+ const activeMcpServers=mcpServers.filter(server=>server.runtimeStatus!==null||server.serverInfo!==null||server.toolsError!==null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
  const result={
   ...configuration,
-  exposedApps:apps.map(app=>app.id??app.name??'unknown'),
-  activeMcpServers:activeMcpServers.map(server=>server.name??server.id??'unknown'),
+  exposedApps:apps.map(app=>app.id),
+  activeMcpServers:activeMcpServers.map(server=>server.name),
  };
  if(result.exposedApps.length||result.activeMcpServers.length)throw Error('External app-server tools are not isolated: '+JSON.stringify(result));
  return result;

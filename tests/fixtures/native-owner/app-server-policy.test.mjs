@@ -7,10 +7,17 @@ function requestBoundary(responses) {
  const request=async(method,params)=>{
   calls.push({method,params});
   if(!(method in responses))throw Error('Unexpected request '+method);
-  return responses[method];
+  const response=responses[method];
+  return typeof response==='function'?response(params):response;
  };
  return {request,calls};
 }
+
+function inactiveMcpServer(name) {
+ return {name,runtimeStatus:null,pluginId:null,serverInfo:null,tools:{},toolsError:null,resources:[],resourceTemplates:[],authStatus:'unknown'};
+}
+
+const isolatedConfiguration={appsFeatureEnabled:false,pluginsFeatureEnabled:false,configuredMcpServers:['alpha'],enabledMcpServers:[]};
 
 test('isolated app-server arguments disable every inherited external capability',()=>{
  assert.deepEqual(isolatedAppServerArgs(['zeta','alpha'],['-c','windows.sandbox=unelevated']),[
@@ -24,7 +31,7 @@ test('the fake request boundary observes a fully isolated effective catalog',asy
  const boundary=requestBoundary({
   'config/read':{config:{features:{apps:false,plugins:false},mcp_servers:{alpha:{enabled:false}}}},
   'app/installed':{apps:[]},
-  'mcpServerStatus/list':{data:[]},
+  'mcpServerStatus/list':{data:[],nextCursor:null},
  });
  const configuration=await verifyExternalToolConfiguration(boundary.request,['alpha']);
  const result=await verifyExternalToolIsolation(boundary.request,'thread-1',configuration);
@@ -50,12 +57,55 @@ test('enabled app features and MCP servers are rejected at the effective configu
 });
 
 test('exposed apps and active MCP tools are rejected at the thread boundary',async()=>{
- const configuration={appsFeatureEnabled:false,pluginsFeatureEnabled:false,configuredMcpServers:['alpha'],enabledMcpServers:[]};
  for(const responses of [
-  {'app/installed':{apps:[{id:'connected-app'}]},'mcpServerStatus/list':{data:[]}},
-  {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{name:'alpha',runtimeStatus:null,serverInfo:null,toolsError:null,tools:{write:{}},resources:[],resourceTemplates:[]}]}},
+  {'app/installed':{apps:[{id:'connected-app',runtimeName:'Connected App',enabled:true,callable:true}]},'mcpServerStatus/list':{data:[],nextCursor:null}},
+  {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{...inactiveMcpServer('alpha'),tools:{write:{}}}],nextCursor:null}},
  ]) {
   const {request}=requestBoundary(responses);
-  await assert.rejects(verifyExternalToolIsolation(request,'thread-1',configuration),/External app-server tools are not isolated/);
+  await assert.rejects(verifyExternalToolIsolation(request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
  }
+});
+
+test('a prohibited MCP capability on a later page is rejected',async()=>{
+ const pages=new Map([
+  [null,{data:Array.from({length:100},(_,index)=>inactiveMcpServer('inactive-'+index)),nextCursor:'page-2'}],
+  ['page-2',{data:[{...inactiveMcpServer('active'),runtimeStatus:'connected'}],nextCursor:null}],
+ ]);
+ const {request,calls}=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':({cursor})=>pages.get(cursor)});
+ await assert.rejects(verifyExternalToolIsolation(request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
+ assert.equal(calls.filter(call=>call.method==='mcpServerStatus/list').length,2);
+});
+
+test('valid empty and multi-page catalogs are accepted',async()=>{
+ const empty=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[],nextCursor:null}});
+ assert.deepEqual((await verifyExternalToolIsolation(empty.request,'thread-1',isolatedConfiguration)).activeMcpServers,[]);
+ const pages=new Map([
+  [null,{data:[inactiveMcpServer('alpha')],nextCursor:'page-2'}],
+  ['page-2',{data:[inactiveMcpServer('beta')],nextCursor:null}],
+ ]);
+ const multiple=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':({cursor})=>pages.get(cursor)});
+ assert.deepEqual((await verifyExternalToolIsolation(multiple.request,'thread-1',isolatedConfiguration)).activeMcpServers,[]);
+ assert.deepEqual(multiple.calls.filter(call=>call.method==='mcpServerStatus/list').map(call=>call.params.cursor),[null,'page-2']);
+});
+
+test('malformed catalog responses are rejected',async()=>{
+ for(const responses of [
+  {'app/installed':{},'mcpServerStatus/list':{data:[],nextCursor:null}},
+  {'app/installed':{apps:[{}]},'mcpServerStatus/list':{data:[],nextCursor:null}},
+  {'app/installed':{apps:[]},'mcpServerStatus/list':{}},
+  {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{}],nextCursor:null}},
+  {'app/installed':{apps:[]},'mcpServerStatus/list':{data:[],nextCursor:7}},
+ ]) {
+  const {request}=requestBoundary(responses);
+  await assert.rejects(verifyExternalToolIsolation(request,'thread-1',isolatedConfiguration),/Invalid (installed app catalog|MCP server status) response/);
+ }
+});
+
+test('repeated and unbounded MCP pagination are rejected',async()=>{
+ const repeated=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[],nextCursor:'same'}});
+ await assert.rejects(verifyExternalToolIsolation(repeated.request,'thread-1',isolatedConfiguration),/Repeated MCP server status cursor/);
+ let page=0;
+ const unbounded=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':()=>({data:[],nextCursor:String(++page)})});
+ await assert.rejects(verifyExternalToolIsolation(unbounded.request,'thread-1',isolatedConfiguration),/MCP server status pagination exceeded its bound/);
+ assert.equal(unbounded.calls.filter(call=>call.method==='mcpServerStatus/list').length,256);
 });
