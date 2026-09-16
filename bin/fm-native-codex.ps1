@@ -5,14 +5,8 @@
 .SYNOPSIS
 Build or explicitly launch the experimental native Windows Codex host.
 .DESCRIPTION
-Requires Windows PowerShell 5.1, native Node and Codex, Git Bash, and Docker at
- their standard installation paths; Codex app-server 0.154.0 was verified.
-Only empty-fleet homes beneath the user's Windows temporary directory are
-accepted. Existing projects, fleet registrations, Relay and process sources
-are not supported. Ordinary startup never selects this launcher.
-No hooks, global settings, sandbox settings, packages, or Docker images are
-installed or changed. The two fixed notification operations execute outside
-the model's read-only, network-disabled sandbox under native authorization.
+Builds the native provider or launches it with explicit experimental opt-in.
+See docs/native-windows-codex.md for setup, safety boundaries, and supported limits.
 .PARAMETER Experimental
 Required consent to launch this temporary-home-only candidate.
 .PARAMETER BuildOnly

@@ -15,7 +15,7 @@ public static partial class NativeOwner {
     static string CodeRoot { get { return Path.GetDirectoryName(Path.GetDirectoryName(OwnExe)); } }
     static void EmptyFleet(string home) {
         string state=Path.Combine(home,"state"),projects=Path.Combine(home,"projects");
-        if((Directory.Exists(state)&&Directory.GetFiles(state,"*.meta").Length!=0) || (Directory.Exists(projects)&&Directory.GetFileSystemEntries(projects).Length!=0) || File.Exists(Path.Combine(home,"data","secondmates.md")) || File.Exists(Path.Combine(home,"data","projects.md")) || File.Exists(Path.Combine(home,".env")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
+        if((Directory.Exists(state)&&Directory.GetFiles(state,"*.meta").Length!=0) || (Directory.Exists(projects)&&Directory.GetFileSystemEntries(projects).Length!=0) || File.Exists(Path.Combine(home,"data","secondmates.md")) || File.Exists(Path.Combine(home,"data","projects.md")) || File.Exists(Path.Combine(home,".env")) || File.Exists(Path.Combine(home,"config","x-mode.env")) || File.Exists(Path.Combine(state,"x-watch.check.sh")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
     }
     static int Launch(string selectedHome) {
         string home=Path.GetFullPath(selectedHome), node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");

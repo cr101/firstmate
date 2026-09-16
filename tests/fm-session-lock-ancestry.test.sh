@@ -650,8 +650,27 @@ SH
   pass "native lock status distinguishes unknown health while acquisition remains excluded"
 }
 
+test_numeric_ancestry_interfaces_reject_native_identity() {
+  local identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa out rc
+  set +e
+  out=$("$ROOT/bin/fm-harness.sh" ancestry "$identity" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "ancestry accepted a native lock identity as a process id: $out"
+  case "$out" in *'ancestry takes a numeric pid'*) ;; *) fail "ancestry refusal did not preserve its numeric contract: $out" ;; esac
+
+  set +e
+  out=$("$ROOT/bin/fm-harness.sh" ancestry-descent 700 "$identity" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "ancestry-descent accepted a native lock identity as a process id: $out"
+  case "$out" in *'ancestry-descent takes numeric pids'*) ;; *) fail "ancestry-descent refusal did not preserve its numeric contract: $out" ;; esac
+  pass "numeric ancestry interfaces reject native lock identities"
+}
+
 test_native_state_contract
 test_native_status_and_acquisition_behavior
+test_numeric_ancestry_interfaces_reject_native_identity
 test_version_named_session_is_identified_on_both_platforms
 test_harness_at_namespace_pid1_is_examined
 test_ordinary_paths_are_never_harness_processes

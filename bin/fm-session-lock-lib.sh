@@ -187,12 +187,14 @@ fm_win_untag_pid() {  # <pid>
   return 1
 }
 
-# True when $1 is a well-formed session-lock identity: a local pid, or a tagged
-# Windows pid. Every reader of state/.lock decides "is this value usable at all"
-# through this one predicate, because the readers are spread across several
-# scripts and a private numeric test in any one of them silently rejects a valid
-# holder - which reads as "startup never completed" and repeats the whole
-# sequence on every clear or compact.
+# True when $1 is a well-formed session-lock identity: a local pid, a tagged
+# Windows pid, or an explicitly registered native generation. This validates a
+# lock identity, not a process-id argument; PID-only interfaces keep their own
+# numeric validation. Every reader of state/.lock decides "is this value usable
+# at all" through this one predicate, because the readers are spread across
+# several scripts and a private numeric test in any one of them silently rejects
+# a valid holder - which reads as "startup never completed" and repeats the
+# whole sequence on every clear or compact.
 fm_session_pid_valid() {  # <value>
   local native_id
   case "$1" in

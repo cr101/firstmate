@@ -17,8 +17,8 @@ fs.cpSync(path.join(repo,'bin/native-owner'),path.join(code,'bin/native-owner'),
 for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
 const launcher=path.join(code,'bin/fm-native-codex.ps1');
 command('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly']);
-const alias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
-assert.notEqual(alias.status,0,'The removed -Home alias was still accepted');
+const removedAlias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
+assert.notEqual(removedAlias.status,0,'The removed -Home alias was still accepted');
 function start(home,verify=true){
  const args=['-NoProfile','-File',launcher,'-Experimental','-OperationalHome',home,'-JqImage',image];if(verify)args.push('-VerifyOnly');
  const child=spawn('powershell.exe',args,{stdio:['pipe','pipe','pipe']});let stdout='',stderr='';
@@ -66,11 +66,18 @@ const populated=path.join(area,'populated');fs.mkdirSync(path.join(populated,'st
 const blocked=start(populated);blocked.child.stdin.end();assert.notEqual((await bound(blocked.done,blocked,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(populated,'state/work.meta'),'utf8'),'preserve');assert.equal(fs.existsSync(path.join(populated,'owner-probe.json')),false);
 records.push('populated home refused without changing its records');
+for(const [name,relative] of [['relay-config','config/x-mode.env'],['relay-watch','state/x-watch.check.sh']]){
+ const relayHome=path.join(area,name),record=path.join(relayHome,relative),contents='preserve relay state';
+ fs.mkdirSync(path.dirname(record),{recursive:true});fs.writeFileSync(record,contents);
+ const refusedRelay=start(relayHome);refusedRelay.child.stdin.end();assert.notEqual((await bound(refusedRelay.done,refusedRelay,20000)).exit,0);
+ assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(relayHome,'owner-probe.json')),false);
+}
+records.push('generated Relay state refused before lease acquisition and preserved');
 const outside=path.join(repo,'data/native-launcher',path.basename(area)+'-outside');
 assert.equal(fs.existsSync(outside),false);
 const external=start(outside);external.child.stdin.end();assert.notEqual((await bound(external.done,external,20000)).exit,0);assert.equal(fs.existsSync(outside),false);
-const target=path.join(area,'junction-target'),alias=path.join(area,'junction');fs.mkdirSync(target);fs.symlinkSync(target,alias,'junction');
-const linked=start(path.join(alias,'home'));linked.child.stdin.end();assert.notEqual((await bound(linked.done,linked,20000)).exit,0);assert.equal(fs.existsSync(path.join(target,'home')),false);
+const target=path.join(area,'junction-target'),junction=path.join(area,'junction');fs.mkdirSync(target);fs.symlinkSync(target,junction,'junction');
+const linked=start(path.join(junction,'home'));linked.child.stdin.end();assert.notEqual((await bound(linked.done,linked,20000)).exit,0);assert.equal(fs.existsSync(path.join(target,'home')),false);
 records.push('non-temporary and pre-existing reparse-point homes refused before creation');
 // Delay the existing network owner only in this disposable code copy. The
 // production launcher has no delay/mock switch and still invokes that owner.

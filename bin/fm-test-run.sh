@@ -342,7 +342,7 @@ family_for_basename() {
     fm-claude-stop-autoarm-live-e2e.test.sh|\
     fm-cmux-claude-composer-live-e2e.test.sh|\
     fm-composer-matrix-live-e2e.test.sh|\
-    fm-codex-continuity-live-e2e.test.sh|fm-native-owner-codex-live-e2e.test.sh|fm-native-owner-receipt-live-e2e.test.sh|fm-native-owner-launcher-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
+    fm-codex-continuity-live-e2e.test.sh|fm-native-owner-app-server-policy-live-e2e.test.sh|fm-native-owner-codex-live-e2e.test.sh|fm-native-owner-receipt-live-e2e.test.sh|fm-native-owner-launcher-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|\
@@ -1361,6 +1361,7 @@ families_for_changed_path() {
       ;;
     bin/native-owner/*|bin/fm-native-codex.ps1|tests/fixtures/native-owner/*)
       printf '%s\n' __script__:fm-native-owner-tool-gate.test.sh
+      printf '%s\n' __script__:fm-native-owner-app-server-policy-live-e2e.test.sh
       printf '%s\n' __script__:fm-native-owner-receipt-live-e2e.test.sh
       printf '%s\n' __script__:fm-native-owner-codex-live-e2e.test.sh
       printf '%s\n' __script__:fm-native-owner-launcher-live-e2e.test.sh
