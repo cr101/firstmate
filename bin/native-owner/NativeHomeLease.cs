@@ -16,6 +16,13 @@ public sealed class NativeHomeLease : IDisposable {
     public readonly string Home;
     internal bool IsHeld { get { return file!=null; } }
     public string PreviousGeneration { get; private set; }
+    readonly HashSet<string> deadGenerations=new HashSet<string>();
+    static bool Generation(string value) {
+        if(value==null||value.Length!=32)return false;
+        foreach(char c in value)if(!(c>='0'&&c<='9')&&!(c>='a'&&c<='f'))return false;
+        return true;
+    }
+    public bool ProvenDeadGeneration(string value) { return IsHeld&&deadGenerations.Contains(value); }
     [StructLayout(LayoutKind.Sequential)] struct FT { public uint low,high; }
     [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetProcessTimes(IntPtr process,out FT created,out FT exited,out FT kernel,out FT user);
@@ -23,7 +30,11 @@ public sealed class NativeHomeLease : IDisposable {
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
     static string Filename(string home) {
         string full=Path.GetFullPath(home);
-        if(!full.StartsWith(Path.GetFullPath(Path.GetTempPath()),StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Probe leases require a temporary home");
+        string temporary=Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Temp")).TrimEnd('\\','/')+Path.DirectorySeparatorChar;
+        if(!full.StartsWith(temporary,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Experimental leases require a home beneath the user's Windows temporary directory");
+        for(string parent=full;parent!=null;parent=Path.GetDirectoryName(parent)) {
+            if(Directory.Exists(parent)&&(File.GetAttributes(parent)&FileAttributes.ReparsePoint)!=0) throw new InvalidOperationException("Reparse-point homes are not supported");
+        }
         return Path.Combine(full,"owner-probe.json");
     }
     static Dictionary<string,object> Read(Stream stream) {
@@ -67,6 +78,14 @@ public sealed class NativeHomeLease : IDisposable {
                 var previous=Read(file);
                 if(RootAlive(previous)) throw new InvalidOperationException("Recorded primary is still alive; refusing replacement");
                 PreviousGeneration=previous.ContainsKey("generation") ? (string)previous["generation"] : null;
+                if(!Generation(PreviousGeneration))throw new InvalidOperationException("Invalid predecessor generation; preserved");
+                if(previous.ContainsKey("deadGenerations")) {
+                    var prior=previous["deadGenerations"] as System.Collections.IList;
+                    if(prior==null)throw new InvalidOperationException("Invalid predecessor history; preserved");
+                    foreach(object item in prior){string value=item as string;if(!Generation(value))throw new InvalidOperationException("Invalid predecessor history; preserved");deadGenerations.Add(value);}
+                }
+                deadGenerations.Add(PreviousGeneration);
+                if(deadGenerations.Count>256)throw new InvalidOperationException("Predecessor history requires maintenance; preserved");
             }
             Write(new Dictionary<string,object>{{"state","pending"},{"controllerPid",Process.GetCurrentProcess().Id}});
         } catch { Dispose(); throw; }
@@ -76,7 +95,8 @@ public sealed class NativeHomeLease : IDisposable {
         file.Position=0; file.SetLength(0); file.Write(bytes,0,bytes.Length); file.Flush(true);
     }
     public void Publish(uint pid,ulong created,string generation,string pipe) {
-        using(var self=Process.GetCurrentProcess()) Write(new Dictionary<string,object>{{"state","live"},{"rootPid",pid},{"rootCreationFileTime",created},{"generation",generation},{"pipe",pipe},{"controllerPid",self.Id},{"controllerCreated",self.StartTime.ToUniversalTime().ToFileTimeUtc()}});
+        var previous=new string[deadGenerations.Count];deadGenerations.CopyTo(previous);
+        using(var self=Process.GetCurrentProcess()) Write(new Dictionary<string,object>{{"deadGenerations",previous},{"state","live"},{"rootPid",pid},{"rootCreationFileTime",created},{"generation",generation},{"pipe",pipe},{"controllerPid",self.Id},{"controllerCreated",self.StartTime.ToUniversalTime().ToFileTimeUtc()}});
     }
     public static Dictionary<string,object> Binding(string state) {
         string canonical=Path.GetFullPath(state).TrimEnd(Path.DirectorySeparatorChar,Path.AltDirectorySeparatorChar);

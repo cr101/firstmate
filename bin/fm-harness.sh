@@ -395,6 +395,17 @@ harness_family() {
 #     a harness-shaped path in some node process's arguments is weaker evidence
 #     than a harness publishing its own identity.
 detect_own() {
+  local native_state native_home native_harness
+  native_home="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+  native_home=${native_home%/state}
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*)
+    if [ -f "$native_home/owner-probe.json" ]; then
+      native_state=$(cygpath -w "${FM_STATE_OVERRIDE:-$FM_HOME/state}") || { echo unknown; return; }
+      native_harness=$(MSYS2_ARG_CONV_EXCL='*' "$SCRIPT_DIR/fm-native-owner.exe" owner harness "$native_state" 2>/dev/null) || { echo unknown; return; }
+      case "$native_harness" in codex) echo codex ;; *) echo unknown ;; esac
+      return
+    fi ;;
+  esac
   local marker ancestry strength harness
   marker=$(harness_marker)
   ancestry=$(harness_ancestry)

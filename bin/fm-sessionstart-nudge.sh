@@ -30,7 +30,7 @@ lock_is_in_ancestry() {
     # A Windows-tagged holder is not in this process table at all, so a local
     # ancestry comparison cannot answer for it. Defer to the owner of harness
     # identity, which is the only thing that can read across that boundary.
-    "$FM_WIN_PID_PREFIX"[0-9]*) fm_session_lock_owned_by_self "$STATE"; return ;;
+    native:*|"$FM_WIN_PID_PREFIX"[0-9]*) fm_session_lock_owned_by_self "$STATE"; return ;;
     # PID 1 can own the session inside a PID namespace; compare it below.
     ''|*[!0-9]*) return 1 ;;
   esac

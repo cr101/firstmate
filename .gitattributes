@@ -1,6 +1,5 @@
 # Bash parses shell scripts with LF line endings on every supported platform.
 *.sh text eol=lf
-# Test overlays and the extensionless Bash fixture must survive Windows clones.
-# Unified diff context includes intentional space-only lines.
-tests/fixtures/native-owner/consumer-adapter.patch text eol=lf whitespace=-blank-at-eol
+# Extensionless Bash helpers must survive Windows clones.
 tests/fixtures/native-owner/jq text eol=lf
+bin/native-owner/tools/jq text eol=lf

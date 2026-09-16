@@ -8,10 +8,16 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 
 ## Experimental native Windows ownership candidate
 
-Verified on 2026-09-15 with Codex app-server 0.154.0, Windows 10.0.26200 x86_64, and the saved unelevated Windows sandbox.
+Verified on 2026-09-15 and 2026-09-16 with Codex app-server 0.154.0, Windows 10.0.26200 x86_64, and the saved unelevated Windows sandbox.
 This is an isolated candidate verification, not an installed runtime backend or a claim that ordinary Codex shell tools can run Git Bash in that sandbox.
-The native ownership core and Codex request policy live under `bin/native-owner/`; launchers, controlled messages, model prompts, Docker jq, and the temporary consumer integration patch remain test-only under `tests/fixtures/native-owner/`.
-The home reservation deliberately still rejects non-temporary homes, and normal Firstmate startup does not load the candidate.
+The native controller, interactive app-server host, fixed operation scripts, and request policy live under `bin/native-owner/`.
+`bin/fm-native-codex.ps1` owns explicit launch and local compilation; its PowerShell help documents prerequisites and flags.
+It does not install hooks, alter saved settings, pull images, or select a new default backend.
+The home reservation rejects locations outside the user's Windows temporary directory and existing reparse-point ancestors.
+Existing fleet metadata, projects, registrations, Relay configuration, and process-event sources are refused.
+Those checks retain the experimental boundary rather than proving race-free paths or populated-fleet support.
+Ordinary homes do not opt in; the real session-lock, harness, and startup-nudge readers select the native provider only from native home records.
+The test-only consumer patch has been removed.
 
 Refresh the portable request-policy regression with:
 
@@ -19,10 +25,10 @@ Refresh the portable request-policy regression with:
 bash tests/fm-native-owner-tool-gate.test.sh
 ```
 
-The 29 behavioral cases cover the request policy and bounded host shutdown, including synchronous revocation, single-flight shutdown, failed interruption, cancelled shutdown requests, retained-process termination, and unconfirmed-exit refusal.
+The 31 behavioral cases cover the request policy and bounded host shutdown, including synchronous revocation, single-flight shutdown, failed interruption, cancelled shutdown requests, retained-process termination, and unconfirmed-exit refusal.
 The native controller now persists receipt presentation, acknowledgement intent, and completion under its existing exclusive home lease.
 It flushes acknowledgement intent before invoking the mutation and preserves interrupted attempts for reconciliation rather than retrying them.
-The token-free Windows guard exercises 25 receipt cases, including complete-versus-partial recovery, preservation of newer work, missing or changed evidence, generation separation, file links, and lease revocation.
+The token-free Windows guard exercises 28 receipt cases, including complete-versus-partial recovery, preservation of newer work, missing or changed evidence, generation separation, file links, and lease revocation.
 Two native operation-lifetime cases verify bounded stop and last-handle-close termination while an independent process remains alive.
 The guard also retains the exclusive-owner, normal-exit, controller-loss, orphan-recovery, ambiguous-record, and child-scope tests:
 
@@ -54,8 +60,52 @@ Kill-on-close is applied only to fixed operation jobs, not the encompassing sess
 Two additional model-free cases interrupt the real acknowledgement scripts after the inbox move and after the queue acknowledgement, respectively.
 A new controller preserves the partial case as unresolved and reconciles the completed case from matching durable effects without replaying either mutation.
 Missing, changed, malformed, reparse-point, or incomplete evidence remains unresolved; recovery does not mean retrying or undoing a partial acknowledgement.
-These results do not establish active-model-turn interruption, production-wide shutdown, adversarial Windows path/process races, populated-fleet behavior, or other harness support.
-The production launcher and ordinary-startup integration remain unfinished and disabled while those boundaries are incomplete.
+The receipt evidence also supports multiple inbox targets and general wake records with no inbox target; an unrelated note is never consumed.
+
+### Explicit launcher integration
+
+The opt-in launcher now runs real startup, delivers its digest before deferred work finishes, and retains the deferred operation's authorization until completion or bounded cancellation.
+It starts an ephemeral read-only, network-disabled primary thread and verifies the returned app-server policy.
+Its interactive host accepts ordinary input, `/interrupt`, and `/quit` and initiates model handling when a new durable notification arrives.
+Only controller-selected startup, notification check, and acknowledgement scripts run with registered native operation authority.
+Docker jq mounts are read-only, networking and image pulls are disabled, and its read-only helper process has a separate container-side expiry.
+The launch-bound owner record preserves verified-dead predecessor generations across failed startup attempts so an intervening failed launch does not strand the previous session lock.
+That history is bounded and refuses further acquisition rather than silently forgetting evidence.
+An unresolved acknowledgement prevents more work and identifies the preserved journal for review; no partial attempt is retried or rolled back automatically.
+
+Build without launching, then explicitly test an empty temporary home from Windows PowerShell:
+
+```powershell
+.\bin\fm-native-codex.ps1 -BuildOnly
+.\bin\fm-native-codex.ps1 -Experimental -VerifyOnly `
+  -Home "$env:LOCALAPPDATA\Temp\firstmate-native-example" -JqImage <existing-local-image>
+```
+
+Omit `-VerifyOnly` for an interactive model session.
+The local image must contain jq and GNU timeout; this command does not install them.
+The native provider must be rebuilt when its source stamp changes.
+
+Refresh the actual launcher without model turns, then optionally exercise two notification turns and active-turn cancellation:
+
+```sh
+FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 \
+  bash tests/fm-native-owner-launcher-live-e2e.test.sh
+FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE_NATIVE_CODEX=1 \
+  bash tests/fm-native-owner-launcher-live-e2e.test.sh
+```
+
+The actual launcher refused a competing launch without changing its record, restarted after an intervening startup failure, refused a populated home unchanged, and delivered startup before a deliberately delayed deferred worker completed.
+Non-temporary homes and pre-existing reparse-point ancestors were refused before creating a home.
+Its cancellation stopped the registered deferred operation while an independent process stayed alive.
+Two later inbox notifications each initiated a real model turn without another startup or a test-generated model prompt; each was observed and acknowledged through the fixed operations.
+A separate shutdown interrupted an active model turn, confirmed app-server exit, and preserved the pending notification.
+The production launcher also refused a real partially acknowledged journal from the fault-injection fixture and surfaced the reconciliation requirement without starting the model.
+Fixture delays and controlled notifications remain under `tests/fixtures/native-owner/`; the launcher contains no test message generator.
+
+Production use remains disabled.
+These results do not establish populated-fleet shutdown, forced app-server descendant cleanup, adversarial Windows path/process races, PID reuse and peer-handle races, integration of every numeric identity reader, other harness support, or installation and packaging.
+The shared-reader rollout remains deliberately limited to the explicit empty-fleet launcher; Pi, OMP, OpenCode, and fleet lease consumers are not claimed supported.
+Full no-mistakes validation has not run, and no publication or merge is authorized by these targeted tests.
 
 ## Harness detection precedence
 

@@ -14,6 +14,18 @@ function fixture(operate) {
 const check=(overrides={})=>({threadId:'primary',turnId:'turn',callId:'check',namespace:null,tool:'fm_notification_check',arguments:{},...overrides});
 const ack=(overrides={})=>check({callId:'ack',tool:'fm_notification_ack',arguments:{receipt:'receipt',observed:'observed'},...overrides});
 
+test('quiet checks create no receipt and permit a later delivery',async()=>{
+ let count=0;const {gate,calls}=fixture(()=>++count===1?{operationState:'quiet'}:{operationState:'delivered',notification:message});
+ assert.deepEqual((await gate.handle(check())).value,{quiet:true});
+ assert.equal((await gate.handle(ack())).success,false);
+ assert.equal((await gate.handle(check({callId:'later'}))).value.receipt,'receipt');
+ assert.equal(calls.length,2);
+});
+test('a cancelled quiet check cannot authorize another turn',async()=>{
+ let finish;const {gate}=fixture(()=>new Promise(resolve=>{finish=resolve;}));
+ const pending=gate.handle(check());gate.endTurn('primary','turn');finish({operationState:'quiet'});
+ assert.equal((await pending).success,false);
+});
 test('observation precedes one acknowledgement; receipt replay cannot execute twice',async()=>{
  const {gate,calls}=fixture();
  assert.equal((await gate.handle(ack())).success,false);

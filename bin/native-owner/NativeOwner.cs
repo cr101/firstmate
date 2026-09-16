@@ -121,7 +121,7 @@ public static partial class NativeOwner {
             else if(verb=="harness") value=RegisteredHarness;
             else if(verb=="alive") {
                 string requested=request.ContainsKey("id") ? (string)request["id"] : "";
-                value=requested==id ? "true" : lease.PreviousGeneration!=null && requested=="native:"+lease.PreviousGeneration ? "false" : "unknown";
+                value=requested==id ? "true" : requested.StartsWith("native:",StringComparison.Ordinal) && lease.ProvenDeadGeneration(requested.Substring(7)) ? "false" : "unknown";
             }
             else {
                 string filename=Path.Combine(lease.Home,"state",".lock");

@@ -143,6 +143,29 @@ fm_harness_process_matches() {  # <comm> <args>
 # non-numeric so that any consumer treating it as a Cygwin pid - including a
 # future `kill` - refuses it instead of acting on the wrong process.
 FM_WIN_PID_PREFIX='win:'
+# Native routing is selected by durable home records, never an inherited role.
+FM_NATIVE_OWNER_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-native-owner.exe"
+fm_native_owner_selected() {
+  local state="${FM_STATE_OVERRIDE:-${FM_HOME:-}/state}" value
+  [ -f "${state%/state}/owner-probe.json" ] && return 0
+  value=$(cat "$state/.lock" 2>/dev/null || true)
+  case "$value" in native:*) return 0 ;; esac
+  return 1
+}
+fm_native_owner_call() {
+  local native_state
+  native_state=$(cygpath -w "${FM_STATE_OVERRIDE:-${FM_HOME:?}/state}") || return 2
+  MSYS2_ARG_CONV_EXCL='*' "$FM_NATIVE_OWNER_BIN" owner "$1" "$native_state" "${2:-}"
+}
+# Three states: 0 is live, 1 proven dead, 2 unknown. Do not turn exclusion
+# (unknown must preserve occupancy) into a positive health assertion.
+fm_native_owner_state() {
+  local rc
+  if fm_native_owner_call alive "$1"; then return 0; else rc=$?; fi
+  [ "$rc" -eq 1 ] && return 1
+  return 2
+}
+
 
 # True on a Cygwin-family userspace, where the boundary above applies.
 fm_win_boundary_applies() {
@@ -167,7 +190,13 @@ fm_win_untag_pid() {  # <pid>
 # holder - which reads as "startup never completed" and repeats the whole
 # sequence on every clear or compact.
 fm_session_pid_valid() {  # <value>
+  local native_id
   case "$1" in
+    native:*)
+      native_id=${1#native:}
+      [ "${#native_id}" -eq 32 ] || return 1
+      case "$native_id" in *[!0-9a-f]*) return 1 ;; esac
+      return 0 ;;
     "$FM_WIN_PID_PREFIX"[0-9]*) return 0 ;;
     ''|*[!0-9]*) return 1 ;;
   esac
@@ -257,6 +286,7 @@ fm_win_harness_ancestry_pids() {
 # session cannot be read off the ancestry at all, so the whole contiguous run is
 # reported and the callers below decide what they need from it.
 fm_harness_ancestry_pids() {
+  if fm_win_boundary_applies && fm_native_owner_selected; then fm_native_owner_call identity; return; fi
   local pid=$$ comm args extending=0 printed=0
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     comm=$(fm_ps_comm "$pid") || break
@@ -311,7 +341,12 @@ EOF
 # kill -0 cannot see across that boundary and would report a live harness as
 # dead - which would hand a running session's home to a second one.
 fm_harness_pid_alive() {
-  local pid=$1 comm args winpid
+  local pid=$1 comm args winpid owner_rc
+  case "$pid" in native:*)
+    if fm_native_owner_state "$pid"; then return 0; else owner_rc=$?; fi
+    # Compatibility for exclusion readers only; native health uses the state API.
+    [ "$owner_rc" -ne 1 ]; return ;;
+  esac
   if winpid=$(fm_win_untag_pid "$pid"); then
     comm=$(fm_win_command "$winpid") || return 1
     fm_harness_process_matches "$comm" "$comm"
@@ -332,7 +367,12 @@ fm_harness_pid_alive() {
 # lock, a malformed lock, a lock held by a harness outside this ancestry, or an
 # ancestry that cannot be resolved all fail closed.
 fm_session_lock_owned_by_self() {
-  local state=$1 lock_pid pids pid
+  local state=$1 lock_pid pids pid native_state
+  if fm_win_boundary_applies && FM_STATE_OVERRIDE="$state" fm_native_owner_selected; then
+    native_state=$(cygpath -w "$state") || return 1
+    MSYS2_ARG_CONV_EXCL='*' "$FM_NATIVE_OWNER_BIN" owner owns "$native_state"
+    return
+  fi
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
   pids=$(fm_harness_ancestry_pids) || return 1

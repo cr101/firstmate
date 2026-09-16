@@ -48,36 +48,56 @@ public sealed class NativeAcknowledgementEvidence {
     }
     public static NativeAcknowledgementEvidence Capture(NativeHomeLease lease,Dictionary<string,object> payload) {
         if(lease==null || !lease.IsHeld) throw new InvalidOperationException("An active home lease is required");
-        string note=Note(payload);ulong cutoff;
+        ulong cutoff;
         if(!payload.ContainsKey("seq") || !(payload["seq"] is string) || !ulong.TryParse((string)payload["seq"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff) || cutoff==0) throw new IOException("Invalid wake cutoff");
         var rows=Rows(Read(lease.Home,Path.Combine("state",".wake-queue")),cutoff);
-        bool found=false;foreach(string row in rows) if(row.Split('\t')[3]=="inbox:"+note) found=true;
-        if(!found) throw new IOException("Inbox wake is not present at the acknowledged cutoff");
-        if(File.Exists(Path.Combine(lease.Home,"state","inbox","handled",note+".note"))) throw new IOException("Inbox target is already handled or ambiguous");
-        string digest=Hash(Read(lease.Home,Path.Combine("state","inbox",note+".note")));
-        return new NativeAcknowledgementEvidence(lease,new Dictionary<string,object>{{"version",1},{"note",note},{"cutoff",cutoff.ToString(CultureInfo.InvariantCulture)},{"noteSha256",digest},{"rows",rows.ToArray()}});
+        if(rows.Count==0) throw new IOException("No queued targets remain");
+        var ids=new HashSet<string>();
+        if(payload.ContainsKey("notes")) {
+            var input=payload["notes"] as System.Collections.IList;
+            if(input==null)throw new IOException("Invalid inbox target list");
+            foreach(object id in input)ids.Add(Note(new Dictionary<string,object>{{"note",id}}));
+        } else ids.Add(Note(payload));
+        var queued=new HashSet<string>();
+        foreach(string row in rows) {string key=row.Split('	')[3];if(key.StartsWith("inbox:",StringComparison.Ordinal))queued.Add(key.Substring(6));}
+        if(!ids.SetEquals(queued))throw new IOException("Inbox targets differ from the captured queue");
+        var notes=new List<Dictionary<string,object>>();
+        foreach(string id in ids) {
+            if(File.Exists(Path.Combine(lease.Home,"state","inbox","handled",id+".note")))throw new IOException("Inbox target is already handled or ambiguous");
+            notes.Add(new Dictionary<string,object>{{"note",id},{"noteSha256",Hash(Read(lease.Home,Path.Combine("state","inbox",id+".note")))}});
+        }
+        var record=new Dictionary<string,object>{{"version",2},{"notes",notes},{"cutoff",cutoff.ToString(CultureInfo.InvariantCulture)},{"rows",rows.ToArray()}};
+        if(notes.Count==1) {record["note"]=notes[0]["note"];record["noteSha256"]=notes[0]["noteSha256"];}
+        return new NativeAcknowledgementEvidence(lease,record);
     }
     internal static bool Completed(NativeHomeLease lease,Dictionary<string,object> evidence) {
         if(lease==null || !lease.IsHeld || evidence==null) return false;
         try {
-            if(Convert.ToInt32(evidence["version"])!=1) return false;
-            string note=Note(evidence), digest=(string)evidence["noteSha256"];ulong cutoff;
-            if(!Regex.IsMatch(digest,@"\A[0-9a-f]{64}\z") || !ulong.TryParse((string)evidence["cutoff"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff) || cutoff==0) return false;
-            // A captured, nonempty target set is mandatory; an empty queue on
-            // its own is not evidence that an acknowledgement happened.
+            int version=Convert.ToInt32(evidence["version"]);ulong cutoff;
+            if(version!=1 && version!=2)return false;
+            if(!ulong.TryParse((string)evidence["cutoff"],NumberStyles.None,CultureInfo.InvariantCulture,out cutoff)||cutoff==0)return false;
             var targets=evidence["rows"] as System.Collections.IList;
-            if(targets==null || targets.Count==0) return false;
-            var saved=new List<string>();foreach(object target in targets) { if(!(target is string)) return false;saved.Add((string)target); }
+            if(targets==null||targets.Count==0)return false;
+            var saved=new List<string>();foreach(object target in targets){if(!(target is string))return false;saved.Add((string)target);}
             var validated=Rows(new UTF8Encoding(false,true).GetBytes(string.Join("\n",saved.ToArray())+"\n"),cutoff);
-            if(validated.Count!=targets.Count || !validated.Exists(row=>row.Split('\t')[3]=="inbox:"+note)) return false;
-            if(File.Exists(Path.Combine(lease.Home,"state","inbox",note+".note"))) return false;
-            if(Hash(Read(lease.Home,Path.Combine("state","inbox","handled",note+".note")))!=digest) return false;
-            return Rows(Read(lease.Home,Path.Combine("state",".wake-queue")),cutoff).Count==0;
-        } catch(IOException) { return false; }
-        catch(UnauthorizedAccessException) { return false; }
-        catch(ArgumentException) { return false; }
-        catch(KeyNotFoundException) { return false; }
-        catch(InvalidCastException) { return false; }
-        catch(FormatException) { return false; }
+            if(validated.Count!=targets.Count)return false;
+            var notes=new List<Dictionary<string,object>>();
+            if(version==1)notes.Add(evidence);
+            else {
+                var list=evidence["notes"] as System.Collections.IList;if(list==null)return false;
+                foreach(object entry in list){var note=entry as Dictionary<string,object>;if(note==null)return false;notes.Add(note);}
+            }
+            var ids=new HashSet<string>();
+            foreach(var entry in notes) {
+                string note=Note(entry),digest=(string)entry["noteSha256"];
+                if(!ids.Add(note)||!Regex.IsMatch(digest,@"\A[0-9a-f]{64}\z"))return false;
+                if(File.Exists(Path.Combine(lease.Home,"state","inbox",note+".note")))return false;
+                if(Hash(Read(lease.Home,Path.Combine("state","inbox","handled",note+".note")))!=digest)return false;
+            }
+            var queued=new HashSet<string>();foreach(string row in validated){string key=row.Split('	')[3];if(key.StartsWith("inbox:",StringComparison.Ordinal))queued.Add(key.Substring(6));}
+            return ids.SetEquals(queued)&&Rows(Read(lease.Home,Path.Combine("state",".wake-queue")),cutoff).Count==0;
+        } catch(IOException){return false;} catch(UnauthorizedAccessException){return false;}
+        catch(ArgumentException){return false;} catch(KeyNotFoundException){return false;}
+        catch(InvalidCastException){return false;} catch(FormatException){return false;} catch(OverflowException){return false;}
     }
 }

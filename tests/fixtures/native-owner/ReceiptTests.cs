@@ -152,6 +152,29 @@ public static class ReceiptTests {
                 Expect(!journal.NeedsReconciliation,"Rejected evidence created an attempt");
             }
         });
+        foreach(string scenario in new [] {"no-inbox-targets","multiple-complete","multiple-partial"}) {
+            Case("general wake recovery: "+scenario,lease=>{
+                Targets(lease);var payload=Payload("general");payload.Remove("note");
+                if(scenario=="no-inbox-targets") {
+                    payload["notes"]=new string[0];File.WriteAllText(Queue(lease),"1\t1\tcheck\tdiagnostic\treport\n");
+                } else {
+                    payload["notes"]=new [] {"note-id","second"};payload["seq"]="2";
+                    File.WriteAllText(Path.Combine(lease.Home,"state","inbox","second.note"),"second notification");
+                    File.AppendAllText(Queue(lease),"2\t2\tcheck\tinbox:second\tsecond\n");
+                }
+                using(var journal=new NativeReceiptJournal(lease,A)) {
+                    var delivery=journal.Present(payload);
+                    journal.BeginAcknowledgement((string)delivery["receipt"],"general",NativeAcknowledgementEvidence.Capture(lease,delivery));
+                }
+                if(scenario!="no-inbox-targets") {
+                    File.Move(Pending(lease),Handled(lease));
+                    if(scenario=="multiple-complete")File.Move(Path.Combine(lease.Home,"state","inbox","second.note"),Path.Combine(lease.Home,"state","inbox","handled","second.note"));
+                }
+                File.WriteAllText(Queue(lease),"");
+                using(var journal=new NativeReceiptJournal(lease,B)) Expect(journal.ReconcileCompletedAcknowledgements()==(scenario=="multiple-partial"?0:1),"Incorrect general-wake recovery");
+                if(scenario=="no-inbox-targets")Expect(File.Exists(Pending(lease)),"Unrelated inbox note was consumed");
+            });
+        }
         Console.WriteLine("RECEIPT_TESTS_PASS "+passed);return 0;
     }
 }

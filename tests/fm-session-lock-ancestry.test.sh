@@ -572,6 +572,33 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
   pass "session-lock e2e: a version-named session under a harness-named daemon keeps its own lock"
 }
 
+test_native_state_contract() (
+  # shellcheck source=bin/fm-session-lock-lib.sh
+  . "$LIB"
+  local answer rc identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  fm_native_owner_call() { return "$answer"; }
+  fm_session_pid_valid "$identity" || fail "valid native identity rejected"
+  if fm_session_pid_valid native:123; then fail "malformed native identity accepted"; fi
+  for answer in 0 1 2; do
+    rc=0; fm_native_owner_state "$identity" || rc=$?
+    [ "$rc" -eq "$answer" ] || fail "native three-state result collapsed"
+    rc=0; fm_harness_pid_alive "$identity" || rc=$?
+    if [ "$answer" -eq 1 ]; then
+      [ "$rc" -ne 0 ] || fail "proven-dead owner retained occupancy"
+    else
+      [ "$rc" -eq 0 ] || fail "live or unknown owner lost exclusion"
+    fi
+  done
+  FM_HOME="$TMP_ROOT/native-selection"
+  FM_STATE_OVERRIDE="$FM_HOME/state"
+  mkdir -p "$FM_STATE_OVERRIDE"
+  if fm_native_owner_selected; then fail "ordinary home opted in without records"; fi
+  printf '%s\n' "$identity" > "$FM_STATE_OVERRIDE/.lock"
+  fm_native_owner_selected || fail "native lock lost routing without its binding"
+  pass "native identity routing preserves unknown exclusion without certifying health"
+)
+
+test_native_state_contract
 test_version_named_session_is_identified_on_both_platforms
 test_harness_at_namespace_pid1_is_examined
 test_ordinary_paths_are_never_harness_processes
