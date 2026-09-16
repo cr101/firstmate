@@ -23,18 +23,38 @@ public sealed class NativeHomeLease : IDisposable {
     }
     public bool ProvenDeadGeneration(string value) { return IsHeld&&deadGenerations.Contains(value); }
     [StructLayout(LayoutKind.Sequential)] struct FT { public uint low,high; }
+    [StructLayout(LayoutKind.Sequential)] struct Info {
+        public uint attributes,createdLow,createdHigh,accessLow,accessHigh,writeLow,writeHigh;
+        public uint volume,sizeHigh,sizeLow,links,indexHigh,indexLow;
+    }
     [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetProcessTimes(IntPtr process,out FT created,out FT exited,out FT kernel,out FT user);
     [DllImport("kernel32.dll",SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
-    static string Filename(string home) {
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetFileInformationByHandle(IntPtr handle,out Info info);
+    public static string ValidateHomePath(string home) {
         string full=Path.GetFullPath(home);
         string temporary=Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Temp")).TrimEnd('\\','/')+Path.DirectorySeparatorChar;
         if(!full.StartsWith(temporary,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Experimental leases require a home beneath the user's Windows temporary directory");
         for(string parent=full;parent!=null;parent=Path.GetDirectoryName(parent)) {
             if(Directory.Exists(parent)&&(File.GetAttributes(parent)&FileAttributes.ReparsePoint)!=0) throw new InvalidOperationException("Reparse-point homes are not supported");
         }
-        return Path.Combine(full,"owner-probe.json");
+        return full;
+    }
+    static string Filename(string home) { return Path.Combine(ValidateHomePath(home),"owner-probe.json"); }
+    static void ValidateFile(FileStream stream,SecurityIdentifier user) {
+        var access=stream.GetAccessControl();
+        if(!access.AreAccessRulesProtected || !access.GetOwner(typeof(SecurityIdentifier)).Equals(user)) throw new IOException("Owner record security differs; preserved");
+        foreach(FileSystemAccessRule rule in access.GetAccessRules(true,true,typeof(SecurityIdentifier))) if(rule.AccessControlType==AccessControlType.Allow && !rule.IdentityReference.Equals(user)) throw new IOException("Owner record grants unexpected access; preserved");
+        Info info;
+        if(!GetFileInformationByHandle(stream.SafeFileHandle.DangerousGetHandle(),out info) || info.links!=1 || (info.attributes&0x400)!=0) throw new IOException("Owner record file identity is unsafe; preserved");
+    }
+    static FileStream OpenExisting(string name,FileSystemRights rights,FileAccess access,FileShare share) {
+        FileAttributes attributes=File.GetAttributes(name);
+        if((attributes&FileAttributes.ReparsePoint)!=0 || (attributes&FileAttributes.Directory)!=0) throw new IOException("Owner record path is unsafe; preserved");
+        FileStream stream=rights==0 ? new FileStream(name,FileMode.Open,access,share) : new FileStream(name,FileMode.Open,rights,share,4096,FileOptions.None);
+        try { ValidateFile(stream,WindowsIdentity.GetCurrent().User);return stream; }
+        catch { stream.Dispose();throw; }
     }
     static Dictionary<string,object> Read(Stream stream) {
         stream.Position=0;
@@ -61,30 +81,48 @@ public sealed class NativeHomeLease : IDisposable {
             return true;
         } finally { CloseHandle(handle); }
     }
+    static void CollectDeadGenerations(Dictionary<string,object> record,HashSet<string> generations) {
+        string previousGeneration=record.ContainsKey("generation") ? (string)record["generation"] : null;
+        if(!Generation(previousGeneration))throw new InvalidOperationException("Invalid predecessor generation; preserved");
+        if(record.ContainsKey("deadGenerations")) {
+            var prior=record["deadGenerations"] as System.Collections.IList;
+            if(prior==null)throw new InvalidOperationException("Invalid predecessor history; preserved");
+            foreach(object item in prior){string value=item as string;if(!Generation(value))throw new InvalidOperationException("Invalid predecessor history; preserved");generations.Add(value);}
+        }
+        generations.Add(previousGeneration);
+        if(generations.Count>256)throw new InvalidOperationException("Predecessor history requires maintenance; preserved");
+    }
+    public static string[] ProvenDeadGenerationsForAdmission(string home) {
+        string name=Filename(home);
+        try {
+            using(var reader=OpenExisting(name,0,FileAccess.Read,FileShare.ReadWrite)) {
+                if(reader.Length==0)throw new InvalidOperationException("Empty existing owner record is ambiguous; preserved");
+                var previous=Read(reader);
+                if(RootAlive(previous))return new string[0];
+                var generations=new HashSet<string>();CollectDeadGenerations(previous,generations);
+                var result=new string[generations.Count];generations.CopyTo(result);return result;
+            }
+        } catch(FileNotFoundException) { return new string[0]; }
+        catch(DirectoryNotFoundException) { return new string[0]; }
+    }
     public NativeHomeLease(string home) {
-        Home=Path.GetFullPath(home);
+        Home=ValidateHomePath(home);
         string name=Filename(Home);
         Directory.CreateDirectory(Home);
         var security=new FileSecurity(); security.SetAccessRuleProtection(true,false);
-        security.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User,FileSystemRights.FullControl,AccessControlType.Allow));
+        var user=WindowsIdentity.GetCurrent().User;security.SetOwner(user);
+        security.AddAccessRule(new FileSystemAccessRule(user,FileSystemRights.FullControl,AccessControlType.Allow));
         // The OS arbitrates concurrent controllers before either reads or writes.
         bool created=false;
-        try { file=new FileStream(name,FileMode.CreateNew,FileSystemRights.Read|FileSystemRights.Write,FileShare.Read,4096,FileOptions.None,security); created=true; }
-        catch(IOException) { file=new FileStream(name,FileMode.Open,FileSystemRights.Read|FileSystemRights.Write,FileShare.Read,4096,FileOptions.None,security); }
         try {
+            try { file=new FileStream(name,FileMode.CreateNew,FileSystemRights.Read|FileSystemRights.Write,FileShare.Read,4096,FileOptions.None,security);created=true; }
+            catch(IOException) { file=OpenExisting(name,FileSystemRights.Read|FileSystemRights.Write,0,FileShare.Read); }
+            ValidateFile(file,user);
             if(!created && file.Length==0) throw new InvalidOperationException("Empty existing owner record is ambiguous; preserved");
             if(file.Length>0) {
                 var previous=Read(file);
                 if(RootAlive(previous)) throw new InvalidOperationException("Recorded primary is still alive; refusing replacement");
-                string previousGeneration=previous.ContainsKey("generation") ? (string)previous["generation"] : null;
-                if(!Generation(previousGeneration))throw new InvalidOperationException("Invalid predecessor generation; preserved");
-                if(previous.ContainsKey("deadGenerations")) {
-                    var prior=previous["deadGenerations"] as System.Collections.IList;
-                    if(prior==null)throw new InvalidOperationException("Invalid predecessor history; preserved");
-                    foreach(object item in prior){string value=item as string;if(!Generation(value))throw new InvalidOperationException("Invalid predecessor history; preserved");deadGenerations.Add(value);}
-                }
-                deadGenerations.Add(previousGeneration);
-                if(deadGenerations.Count>256)throw new InvalidOperationException("Predecessor history requires maintenance; preserved");
+                CollectDeadGenerations(previous,deadGenerations);
             }
             Write(new Dictionary<string,object>{{"state","pending"},{"controllerPid",Process.GetCurrentProcess().Id}});
         } catch { Dispose(); throw; }
@@ -100,7 +138,7 @@ public sealed class NativeHomeLease : IDisposable {
     public static Dictionary<string,object> Binding(string state) {
         string canonical=Path.GetFullPath(state).TrimEnd(Path.DirectorySeparatorChar,Path.AltDirectorySeparatorChar);
         if(!string.Equals(Path.GetFileName(canonical),"state",StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unexpected state directory");
-        using(var reader=new FileStream(Filename(Path.GetDirectoryName(canonical)),FileMode.Open,FileAccess.Read,FileShare.ReadWrite)) {
+        using(var reader=OpenExisting(Filename(Path.GetDirectoryName(canonical)),0,FileAccess.Read,FileShare.ReadWrite)) {
             var record=Read(reader);
             if(!RootAlive(record)) throw new InvalidOperationException("Primary no longer live");
             return record;

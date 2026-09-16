@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: FM_HOME=<home> admit.sh launch|owned-operation
-# Required environment: FM_HOME; acknowledgement evidence is read from standard input.
+# Required environment: FM_HOME; standard input must be empty with FM_NATIVE_ACK_EVIDENCE_KIND unset, or nonempty with the discriminator set to token|legacy.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 mode=${1:-}

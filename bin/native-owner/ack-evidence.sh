@@ -16,40 +16,6 @@ read_token() {
   printf '%s' "$token"
 }
 
-legacy_token() {
-  node -e '
-    let input="";
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data",chunk=>input+=chunk);
-    process.stdin.on("end",()=>{
-      const value=JSON.parse(input);
-      if(!value||typeof value!=="object"||Array.isArray(value))throw Error("legacy evidence must be an object");
-      const version=Number(value.version);
-      if(![1,2,3].includes(version))throw Error("unsupported legacy evidence");
-      if(typeof value.cutoff!=="string")throw Error("invalid legacy cutoff");
-      const cutoff=String(value.cutoff);
-      const rows=value.rows;
-      if(!Array.isArray(rows)||rows.some(row=>typeof row!=="string"))throw Error("invalid legacy rows");
-      let notes=[];
-      if(version===1)notes=[value];
-      else notes=value.notes;
-      if(!Array.isArray(notes)||notes.some(note=>!note||typeof note!=="object"||Array.isArray(note)))throw Error("invalid legacy notes");
-      if(version===3&&(cutoff!=="0"||rows.length!==0||notes.length!==0))throw Error("invalid legacy recovery target");
-      const generation=version===3?value.recoveryGeneration:"legacy";
-      const marker=version===3?value.recoveryMarker:"";
-      if(typeof generation!=="string"||typeof marker!=="string")throw Error("invalid legacy recovery evidence");
-      const line=["fm-wake-ack-evidence-legacy-v1",`cutoff\t${cutoff}`,`generation\t${generation}`,`marker\t${Buffer.from(marker).toString("base64")}`,`rows\t${rows.length}`];
-      for(const row of rows)line.push(`row\t${Buffer.from(row).toString("base64")}`);
-      line.push(`notes\t${notes.length}`);
-      for(const note of notes){
-        if(typeof note.note!=="string"||typeof note.noteSha256!=="string")throw Error("invalid legacy note");
-        line.push(`note\t${note.note}\t${note.noteSha256}`);
-      }
-      process.stdout.write("legacy."+Buffer.from(line.join("\n")+"\n").toString("base64"));
-    });
-  '
-}
-
 case "${1:-}" in
   capture-json)
     fm_wake_ack_evidence_capture
@@ -65,7 +31,7 @@ case "${1:-}" in
     fm_wake_ack_evidence_clear
     ;;
   legacy-token)
-    legacy_token
+    fm_wake_ack_evidence_legacy_token
     ;;
   preflight-token)
     token=$(read_token)
@@ -77,7 +43,7 @@ case "${1:-}" in
     fm_wake_ack_evidence_completed "$token"
     ;;
   verify-legacy)
-    token=$(legacy_token)
+    token=$(fm_wake_ack_evidence_legacy_token)
     fm_wake_ack_evidence_completed "$token"
     ;;
   acknowledge-token)

@@ -143,7 +143,7 @@ const historicalRow=fs.readFileSync(path.join(historicalState,'.wake-queue'),'ut
 const historicalSession=start(historicalHome);await ready(historicalSession);historicalSession.child.stdin.end();assert.equal((await bound(historicalSession.done,historicalSession,20000)).exit,0);
 assert(fs.readFileSync(path.join(historicalState,'.wake-queue'),'utf8').includes(historicalRow.trim()));
 records.push('queued startup failure survives a newer startup status and remains admissible');
-const hostScript=path.join(code,'bin/native-owner/codex-host.mjs'),wakeDrain=path.join(code,'bin/fm-wake-drain.sh'),hostSource=fs.readFileSync(hostScript,'utf8'),wakeDrainSource=fs.readFileSync(wakeDrain,'utf8');
+const hostScript=path.join(code,'bin/native-owner/codex-host.mjs'),hostSource=fs.readFileSync(hostScript,'utf8');
 fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fake-app-server.mjs'),path.join(code,'bin/native-owner/fake-app-server.mjs'));
 fs.writeFileSync(hostScript,"import {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[]}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
 const completedHome=path.join(area,'completed-ack-restart'),completedNote=enqueue(completedHome,'Complete this controlled acknowledgement before restart.');
@@ -152,9 +152,8 @@ await waitUntil(completedSession,'completed acknowledgement',()=>journalRows(com
 completedSession.child.stdin.write('/quit\n');assert.equal((await bound(completedSession.done,completedSession,20000)).exit,0);
 const completedRestart=start(completedHome);await ready(completedRestart,completedReady.owner.generation);completedRestart.child.stdin.end();assert.equal((await bound(completedRestart.done,completedRestart,20000)).exit,0);
 records.push('journal-correlated completed acknowledgement remains admissible across restart');
-const acknowledgementBoundary='  if ! _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then';
-if(!wakeDrainSource.includes(acknowledgementBoundary))throw Error('Acknowledgement boundary fixture could not be installed');
-fs.writeFileSync(wakeDrain,wakeDrainSource.replace(acknowledgementBoundary,'  printf "ready\\n" > "${FM_PROBE_HOME:?}/ack-boundary-ready"\n  sleep 30\n'+acknowledgementBoundary));
+const wakeLib=path.join(code,'bin/fm-wake-lib.sh'),wakeLibActual=wakeLib+'.actual';
+fs.renameSync(wakeLib,wakeLibActual);fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fm-wake-lib-interrupt.sh'),wakeLib);
 const interruptedHome=path.join(area,'interrupted-ack-restart'),interruptedNote=enqueue(interruptedHome,'Preserve this interrupted acknowledgement for reconciliation.');
 const interruptedQueue=path.join(interruptedHome,'state/.wake-queue'),queueBeforeRestart=fs.readFileSync(interruptedQueue,'utf8'),handledNote=path.join(interruptedHome,'state/inbox/handled',interruptedNote+'.note'),interruptedMarker=path.join(interruptedHome,'state/.watcher-down');
 let interruptedSession,interruptedReady,interruptedResult,markerBody,handledBody;
@@ -167,7 +166,7 @@ try {
  interruptedSession.child.stdin.write('/quit\n');interruptedResult=await bound(interruptedSession.done,interruptedSession,20000);assert.equal(interruptedResult.exit,0,interruptedResult.stderr);
 }finally{
  if(interruptedSession?.child.exitCode===null){interruptedSession.child.stdin.write('/quit\n');try{await bound(interruptedSession.done,interruptedSession,20000);}catch{}}
- fs.writeFileSync(hostScript,hostSource);fs.writeFileSync(wakeDrain,wakeDrainSource);
+ fs.writeFileSync(hostScript,hostSource);fs.unlinkSync(wakeLib);fs.renameSync(wakeLibActual,wakeLib);
 }
 const interruptedRestart=start(interruptedHome);interruptedRestart.child.stdin.end();const reconciliation=await bound(interruptedRestart.done,interruptedRestart,20000);
 assert.notEqual(reconciliation.exit,0);assert(reconciliation.stderr.includes('earlier acknowledgement is incomplete'),reconciliation.stderr);
@@ -220,7 +219,11 @@ assert.equal(fs.existsSync(outside),false);
 const external=start(outside);external.child.stdin.end();assert.notEqual((await bound(external.done,external,20000)).exit,0);assert.equal(fs.existsSync(outside),false);
 const target=path.join(area,'junction-target'),junction=path.join(area,'junction');fs.mkdirSync(target);fs.symlinkSync(target,junction,'junction');
 const linked=start(path.join(junction,'home'));linked.child.stdin.end();assert.notEqual((await bound(linked.done,linked,20000)).exit,0);assert.equal(fs.existsSync(path.join(target,'home')),false);
-records.push('non-temporary and pre-existing reparse-point homes refused before creation');
+const externalOwner=path.join(area,'external-owner.json'),linkedOwnerHome=path.join(area,'linked-owner'),linkedOwner=path.join(linkedOwnerHome,'owner-probe.json');
+const externalOwnerBody=JSON.stringify({deadGenerations:[],state:'live',rootPid:4294967295,rootCreationFileTime:0,generation:'d'.repeat(32),pipe:'unreachable',controllerPid:4294967295,controllerCreated:0});
+fs.mkdirSync(linkedOwnerHome);fs.writeFileSync(externalOwner,externalOwnerBody);fs.linkSync(externalOwner,linkedOwner);
+const linkedOwnerSession=start(linkedOwnerHome);linkedOwnerSession.child.stdin.end();assert.notEqual((await bound(linkedOwnerSession.done,linkedOwnerSession,20000)).exit,0);assert.equal(fs.readFileSync(externalOwner,'utf8'),externalOwnerBody);
+records.push('non-temporary, reparse-point, and hard-linked owner homes are refused without external changes');
 // Delay the existing network owner only in this disposable code copy. The
 // production launcher has no delay/mock switch and still invokes that owner.
 const network=path.join(code,'bin/fm-startup-network.sh');fs.renameSync(network,network+'.actual');

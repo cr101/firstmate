@@ -13,10 +13,11 @@ using System.Threading;
 public static partial class NativeOwner {
     [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int kind);
     static int Launch(string selectedHome) {
-        string home=Path.GetFullPath(selectedHome), node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");
+        string home=NativeHomeLease.ValidateHomePath(selectedHome), node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");
         string host=Path.Combine(CodeRoot,"bin","native-owner","codex-host.mjs");
         if(!File.Exists(node)||!File.Exists(host)) throw new IOException("Native Node or the code-owned host is missing");
-        EmptyFleet(home,true);
+        string[] provenDeadGenerations=NativeHomeLease.ProvenDeadGenerationsForAdmission(home);
+        EmptyFleet(home,true,provenDeadGenerations);
         string session=Guid.NewGuid().ToString("N"),nonce=Guid.NewGuid().ToString("N"),pipeName="fm-native-"+session;
         IntPtr job=CreateJobObject(IntPtr.Zero,null),env=IntPtr.Zero,output=IntPtr.Zero,input=IntPtr.Zero;
         if(job==IntPtr.Zero) throw Error("Create session job");

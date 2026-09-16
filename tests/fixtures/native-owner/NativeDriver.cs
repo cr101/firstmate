@@ -109,6 +109,20 @@ public static partial class NativeOwner {
             bool refused=false;try{EmptyFleet(residual,true);}catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(status)!="preserve\n")throw new InvalidOperationException("Mixed-case BASH_ENV bypassed empty-home admission");
             Console.WriteLine("PASS: fixed Bash admission ignores mixed-case ambient authority");
+            string restart=Path.Combine(directory,"dead-owner-restart"),restartState=Path.Combine(restart,"state"),restartGeneration=new string('d',32);
+            uint departedPid;ulong departedCreated;
+            using(var departed=Process.Start(new ProcessStartInfo("cmd.exe","/c exit 0") {UseShellExecute=false,CreateNoWindow=true})) {
+                departedPid=(uint)departed.Id;departedCreated=(ulong)departed.StartTime.ToUniversalTime().ToFileTimeUtc();departed.WaitForExit();
+            }
+            using(var predecessor=new NativeHomeLease(restart))predecessor.Publish(departedPid,departedCreated,restartGeneration,"unreachable");
+            Directory.CreateDirectory(restartState);File.WriteAllText(Path.Combine(restartState,".lock"),"native:"+restartGeneration+"\n");
+            string[] deadProof=NativeHomeLease.ProvenDeadGenerationsForAdmission(restart);
+            if(Array.IndexOf(deadProof,restartGeneration)<0)throw new InvalidOperationException("Exact departed owner was not proven dead");
+            refused=false;try{EmptyFleet(restart,true,new [] {new string('e',32)});}catch(InvalidOperationException){refused=true;}
+            if(!refused)throw new InvalidOperationException("Unrelated dead-generation claim bypassed native owner exclusion");
+            EmptyFleet(restart,true,deadProof);
+            using(var replacement=new NativeHomeLease(restart))if(!replacement.ProvenDeadGeneration(restartGeneration))throw new InvalidOperationException("Replacement lease lost proven-dead ownership history");
+            Console.WriteLine("PASS: exact dead native generation admits restart while an unreachable endpoint alone remains exclusionary");
             string registered=Path.Combine(directory,"registered"),registeredState=Path.Combine(registered,"state"),canary=Path.Combine(registered,"executed");
             Directory.CreateDirectory(registeredState);
             File.WriteAllText(Path.Combine(registeredState,"custom.check.sh"),"#!/usr/bin/env bash\nprintf executed > \""+canary.Replace('\\','/')+"\"\n");

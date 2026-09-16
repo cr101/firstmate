@@ -13,10 +13,6 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 LOCK="$STATE/.lock"
-mkdir -p "$STATE" 2>/dev/null || {
-  echo "error: cannot create session-lock state directory $STATE; operate read-only until resolved" >&2
-  exit 1
-}
 
 # Harness identity (FM_HARNESS_RE, ancestry walk, holder liveness) is owned by
 # the shared session-lock lib so the Claude Stop auto-arm applies the exact
@@ -53,6 +49,19 @@ fm_lock_conflict_message() {
   return 1
 }
 
+fm_lock_native_admission_proves_dead() {
+  local wanted=${1#native:} list=${FM_NATIVE_PROVEN_DEAD_GENERATIONS:-} generation found=1
+  local IFS=,
+  [ -n "$list" ] || return 1
+  case "$list" in ,*|*,|*,,*) return 2 ;; esac
+  for generation in $list; do
+    [ "${#generation}" -eq 32 ] || return 2
+    case "$generation" in *[!0-9a-f]*) return 2 ;; esac
+    [ "$generation" != "$wanted" ] || found=0
+  done
+  return "$found"
+}
+
 if [ "${1:-}" = "native-admission-predicate" ]; then
   [ "$#" -eq 1 ] || {
     echo "usage: fm-lock.sh native-admission-predicate" >&2
@@ -73,6 +82,19 @@ if [ "${1:-}" = "native-admission-predicate" ]; then
     echo "error: session lock owner is unrecognized; native launch refused" >&2
     exit 1
   fi
+  case "$old" in
+    native:*)
+      if fm_lock_native_admission_proves_dead "$old"; then
+        exit 0
+      else
+        dead_rc=$?
+      fi
+      if [ "$dead_rc" -eq 2 ]; then
+        echo "error: native dead-generation evidence is unrecognized; native launch refused" >&2
+        exit 1
+      fi
+      ;;
+  esac
   if fm_harness_pid_excludes "$old"; then
     if conflict=$(fm_lock_conflict_message "$old"); then
       echo "$conflict" >&2
@@ -83,6 +105,11 @@ if [ "${1:-}" = "native-admission-predicate" ]; then
   fi
   exit 0
 fi
+
+mkdir -p "$STATE" 2>/dev/null || {
+  echo "error: cannot create session-lock state directory $STATE; operate read-only until resolved" >&2
+  exit 1
+}
 
 if [ "${1:-}" = "status" ]; then
   if [ ! -f "$LOCK" ]; then echo "lock: free"; exit 0; fi

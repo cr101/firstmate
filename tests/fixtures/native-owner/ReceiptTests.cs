@@ -20,6 +20,15 @@ public static class ReceiptTests {
         using(var lease=new NativeHomeLease(home)) test(lease);
         passed++;Console.WriteLine("PASS: "+name);
     }
+    static void OwnerProbeLinkCase() {
+        string root=Path.Combine(Path.GetTempPath(),"fm-owner-link-"+Guid.NewGuid().ToString("N")),home=Path.Combine(root,"home"),external=Path.Combine(root,"external-owner.json"),owner=Path.Combine(home,"owner-probe.json");
+        Directory.CreateDirectory(home);
+        string body=Json.Serialize(new Dictionary<string,object>{{"deadGenerations",new string[0]},{"state","live"},{"rootPid",uint.MaxValue},{"rootCreationFileTime",0L},{"generation",A},{"pipe","unreachable"},{"controllerPid",uint.MaxValue},{"controllerCreated",0L}});
+        File.WriteAllText(external,body);Expect(CreateHardLink(owner,external,IntPtr.Zero),"Owner hard-link fixture failed");
+        Refuses(()=>{using(var lease=new NativeHomeLease(home)){}},"Hard-linked owner record accepted");
+        Expect(File.ReadAllText(external)==body,"Hard-linked external owner record changed");
+        passed++;Console.WriteLine("PASS: hard-linked owner record is preserved and refused");
+    }
     static string Queue(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".wake-queue"); }
     static string CompletionHistory(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".watcher-down.ack-completions"); }
     static string Pending(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","note-id.note"); }
@@ -81,6 +90,7 @@ public static class ReceiptTests {
         payload["message"]="recovery";return payload;
     }
     public static int Run() {
+        OwnerProbeLinkCase();
         Case("one writer and unobserved acknowledgement refusal",lease=>{
             Targets(lease);
             using(var journal=new NativeReceiptJournal(lease,A)) {

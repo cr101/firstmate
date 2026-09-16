@@ -26,35 +26,35 @@ Use `/interrupt` to interrupt the current model turn and `/quit` to end the sess
 Run the portable request-policy regression with:
 
 ```sh
-bash tests/fm-native-owner-tool-gate.test.sh
+bin/fm-test-run.sh tests/fm-native-owner-tool-gate.test.sh
 ```
 
 Run native receipt persistence and operation-lifetime checks with:
 
 ```sh
-bash tests/fm-native-owner-receipt-live-e2e.test.sh
+bin/fm-test-run.sh tests/fm-native-owner-receipt-live-e2e.test.sh
 ```
 
 Run effective app and MCP isolation without a model turn with:
 
 ```sh
-FM_LIVE_NATIVE_APP_POLICY=1 bash tests/fm-native-owner-app-server-policy-live-e2e.test.sh
+FM_LIVE_NATIVE_APP_POLICY=1 bin/fm-test-run.sh tests/fm-native-owner-app-server-policy-live-e2e.test.sh
 ```
 
 Run the actual Windows integration with the explicit two-model-turn guard with:
 
 ```sh
 FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_CODEX=1 \
-  bash tests/fm-native-owner-codex-live-e2e.test.sh
+  bin/fm-test-run.sh tests/fm-native-owner-codex-live-e2e.test.sh
 ```
 
 Run the explicit launcher without model turns, then optionally exercise two notification turns and active-turn cancellation with:
 
 ```sh
 FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 \
-  bash tests/fm-native-owner-launcher-live-e2e.test.sh
+  bin/fm-test-run.sh tests/fm-native-owner-launcher-live-e2e.test.sh
 FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE_NATIVE_CODEX=1 \
-  bash tests/fm-native-owner-launcher-live-e2e.test.sh
+  bin/fm-test-run.sh tests/fm-native-owner-launcher-live-e2e.test.sh
 ```
 
 ## Safety boundary and limits
