@@ -234,6 +234,12 @@ block_stop() {
       printf '●  %s process-event source(s) registered, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_SOURCES" "$FM_SUP_BEACON_DESC"
     elif [ "$FM_SUP_CHECKS" -gt 0 ]; then
       printf '●  %s registered custom check(s), but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_CHECKS" "$FM_SUP_BEACON_DESC"
+    elif [ "$FM_SUP_CHECK_INPUTS" -gt 0 ]; then
+      printf '●  %s state check input(s), but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_CHECK_INPUTS" "$FM_SUP_BEACON_DESC"
+    elif [ "$FM_SUP_PENDING_REPLIES" -gt 0 ]; then
+      printf '●  %s pending secondmate reply record(s), but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_PENDING_REPLIES" "$FM_SUP_BEACON_DESC"
+    elif [ "$FM_SUP_RECONCILE_REQUESTS" -gt 0 ]; then
+      printf '●  %s secondmate reconcile request(s), but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_RECONCILE_REQUESTS" "$FM_SUP_BEACON_DESC"
     else
       printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
     fi
@@ -496,6 +502,12 @@ if [ "$terminal_status" -eq 0 ]; then
     NEED_DESC="$FM_SUP_SOURCES process-event source(s) registered"
   elif [ "$FM_SUP_CHECKS" -gt 0 ]; then
     NEED_DESC="$FM_SUP_CHECKS registered custom check(s)"
+  elif [ "$FM_SUP_CHECK_INPUTS" -gt 0 ]; then
+    NEED_DESC="$FM_SUP_CHECK_INPUTS state check input(s)"
+  elif [ "$FM_SUP_PENDING_REPLIES" -gt 0 ]; then
+    NEED_DESC="$FM_SUP_PENDING_REPLIES pending secondmate reply record(s)"
+  elif [ "$FM_SUP_RECONCILE_REQUESTS" -gt 0 ]; then
+    NEED_DESC="$FM_SUP_RECONCILE_REQUESTS secondmate reconcile request(s)"
   else
     NEED_DESC="X-mode relay polling active"
   fi

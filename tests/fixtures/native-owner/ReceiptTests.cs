@@ -53,6 +53,16 @@ public static class ReceiptTests {
             return payload;
         }
     }
+    static void OwnerAcknowledge(NativeHomeLease lease,Dictionary<string,object> payload) {
+        string script=Path.Combine(NativeOwner.CodeRoot,"bin","native-owner","ack-evidence.sh"),opaque=(string)payload["ownerEvidence"];
+        var start=NativeOwner.BashHelper(script,"acknowledge-token",lease.Home);start.RedirectStandardInput=true;start.RedirectStandardOutput=true;start.RedirectStandardError=true;
+        using(var process=Process.Start(start)) {
+            var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
+            process.StandardInput.Write(opaque);process.StandardInput.Close();
+            if(!process.WaitForExit(30000)){process.Kill();throw new IOException("Acknowledgement owner exceeded its bound");}
+            if(process.ExitCode!=0)throw new IOException("Acknowledgement owner refused its captured target: "+error.Result+output.Result);
+        }
+    }
     static Dictionary<string,object> ZeroPayload(NativeHomeLease lease) {
         string[] target=ZeroRecovery(lease,"present").Split('\t');
         Expect(target.Length==2 && target[0]=="0","Real recovery owner did not produce a zero-row target");
@@ -209,6 +219,23 @@ public static class ReceiptTests {
                 File.WriteAllText(Queue(lease),"");
                 using(var journal=new NativeReceiptJournal(lease,B)) Expect(journal.ReconcileCompletedAcknowledgements()==(scenario=="multiple-partial"?0:1),"Incorrect general-wake recovery");
                 if(scenario=="no-inbox-targets")Expect(File.Exists(Pending(lease)),"Unrelated inbox note was consumed");
+            });
+        }
+        foreach(string timing in new [] {"before-capture","after-ack-started"}) {
+            Case("concurrent wake remains pending: "+timing,lease=>{
+                Targets(lease);
+                if(timing=="before-capture")ZeroRecovery(lease,"append");
+                using(var journal=new NativeReceiptJournal(lease,A)) {
+                    var delivery=journal.Present(OwnerPayload(lease,"concurrent"));string receipt=(string)delivery["receipt"],generation=(string)delivery["generation"];
+                    var evidence=NativeAcknowledgementEvidence.Capture(lease,delivery);
+                    journal.BeginAcknowledgement(receipt,"concurrent",evidence);
+                    if(timing=="after-ack-started")ZeroRecovery(lease,"append");
+                    Expect(File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")).Contains(":"+generation+"\n"),"Concurrent wake changed the recovery generation");
+                    OwnerAcknowledge(lease,delivery);journal.CompleteAcknowledgement(receipt);
+                }
+                string queue=File.ReadAllText(Queue(lease));
+                Expect(queue.Contains("later-notification")&&!queue.Contains("inbox:note-id"),"Acknowledgement did not retain only the later wake");
+                Expect(!File.Exists(Pending(lease))&&File.ReadAllText(Handled(lease))=="original captured inbox record\n","Acknowledgement did not consume exactly the captured note");
             });
         }
         Case("zero-row recovery rejects an unproven empty target",lease=>{

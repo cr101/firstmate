@@ -2219,7 +2219,7 @@ fm_wake_ack_evidence_capture() {
   fi
   FM_WAKE_ACK_EVIDENCE_MARKER=$FM_RECOVERY_MARKER_TOKEN
   case "$FM_WAKE_ACK_EVIDENCE_MARKER" in
-    pending:handling:*|announced:handling:*) ;;
+    pending:handling:*|announced:handling:*|pending:downtime:*|announced:downtime:*) ;;
     *)
       fm_lock_release "$FM_WAKE_QUEUE_LOCK"
       fm_wake_ack_evidence_clear
@@ -2380,7 +2380,7 @@ fm_wake_ack_evidence_load() {  # <opaque-token>
     END { if ((NR == 0 && cutoff != 0) || (NR > 0 && max != cutoff) || bad) exit 1 }
   ' "$FM_WAKE_ACK_EVIDENCE_ROWS"; then fm_wake_ack_evidence_clear; return 1; fi
   case "$FM_WAKE_ACK_EVIDENCE_MARKER" in
-    pending:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|announced:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|acked:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION") ;;
+    pending:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|announced:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|pending:downtime:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|announced:downtime:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|acked:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION") ;;
     '') [ "$FM_WAKE_ACK_EVIDENCE_LEGACY" = 1 ] && [ "$FM_WAKE_ACK_EVIDENCE_CUTOFF" -gt 0 ] || { fm_wake_ack_evidence_clear; return 1; } ;;
     *) fm_wake_ack_evidence_clear; return 1 ;;
   esac
@@ -2405,7 +2405,7 @@ fm_wake_ack_evidence_precondition() {  # <opaque-token>
   fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || { fm_wake_ack_evidence_clear; return 1; }
   fm_recovery_marker_snapshot "$marker" || true
   case "$FM_RECOVERY_MARKER_TOKEN" in
-    pending:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|announced:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION") ;;
+    pending:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|announced:handling:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|pending:downtime:"$FM_WAKE_ACK_EVIDENCE_GENERATION"|announced:downtime:"$FM_WAKE_ACK_EVIDENCE_GENERATION") ;;
     *) fm_lock_release "$FM_WAKE_QUEUE_LOCK"; fm_wake_ack_evidence_clear; return 1 ;;
   esac
   if [ "$FM_WAKE_ACK_EVIDENCE_CUTOFF" = 0 ] && [ -s "$FM_WAKE_QUEUE" ]; then

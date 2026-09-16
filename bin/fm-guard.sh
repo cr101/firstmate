@@ -173,6 +173,9 @@ fm_supervision_status "$STATE" "$GRACE"
 in_flight=$FM_SUP_IN_FLIGHT
 sources=$FM_SUP_SOURCES
 checks=$FM_SUP_CHECKS
+check_inputs=$FM_SUP_CHECK_INPUTS
+pending_replies=$FM_SUP_PENDING_REPLIES
+reconcile_requests=$FM_SUP_RECONCILE_REQUESTS
 needed=$FM_SUP_NEEDED
 beacon_desc=$FM_SUP_BEACON_DESC
 fm_watcher_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$FM_HOME" "$FM_ROOT"
@@ -240,6 +243,12 @@ if [ "$watcher_healthy" = false ]; then
         printf '●  %s process-event source(s) registered, but %s.\n' "$sources" "$watcher_cause"
       elif [ "$checks" -gt 0 ]; then
         printf '●  %s registered custom check(s), but %s.\n' "$checks" "$watcher_cause"
+      elif [ "$check_inputs" -gt 0 ]; then
+        printf '●  %s state check input(s), but %s.\n' "$check_inputs" "$watcher_cause"
+      elif [ "$pending_replies" -gt 0 ]; then
+        printf '●  %s pending secondmate reply record(s), but %s.\n' "$pending_replies" "$watcher_cause"
+      elif [ "$reconcile_requests" -gt 0 ]; then
+        printf '●  %s secondmate reconcile request(s), but %s.\n' "$reconcile_requests" "$watcher_cause"
       else
         printf '●  X-mode relay polling needs supervision, but %s.\n' "$watcher_cause"
       fi
