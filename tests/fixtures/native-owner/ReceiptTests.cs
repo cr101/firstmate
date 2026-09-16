@@ -10,6 +10,7 @@ public static class ReceiptTests {
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateHardLink(string link,string target,IntPtr security);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] [return: MarshalAs(UnmanagedType.I1)] static extern bool CreateSymbolicLink(string link,string target,uint flags);
     static readonly string A=new string('a',32),B=new string('b',32);
+    static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
     static int passed;
     static Dictionary<string,object> Payload(string value) { return new Dictionary<string,object>{{"challenge",value},{"message","pending notification"},{"seq","1"},{"generation","recovery"},{"note","note-id"}}; }
     static void Expect(bool value,string message) { if(!value) throw new Exception(message); }
@@ -63,6 +64,15 @@ public static class ReceiptTests {
             if(process.ExitCode!=0)throw new IOException("Acknowledgement owner refused its captured target: "+error.Result+output.Result);
         }
     }
+    static string Completion(Dictionary<string,object> payload) {
+        return Json.Serialize(new Dictionary<string,object>{{"acknowledged",true},{"ownerEvidence",payload["ownerEvidence"]}});
+    }
+    static void Acknowledge(NativeHomeLease lease,NativeReceiptJournal journal,Dictionary<string,object> delivery,string observed) {
+        string receipt=(string)delivery["receipt"];
+        journal.BeginAcknowledgement(receipt,observed,NativeAcknowledgementEvidence.Capture(lease,delivery));
+        OwnerAcknowledge(lease,delivery);
+        journal.CompleteAcknowledgement(receipt,Completion(delivery));
+    }
     static Dictionary<string,object> ZeroPayload(NativeHomeLease lease) {
         string[] target=ZeroRecovery(lease,"present").Split('\t');
         Expect(target.Length==2 && target[0]=="0","Real recovery owner did not produce a zero-row target");
@@ -72,11 +82,12 @@ public static class ReceiptTests {
     }
     public static int Run() {
         Case("one writer and unobserved acknowledgement refusal",lease=>{
+            Targets(lease);
             using(var journal=new NativeReceiptJournal(lease,A)) {
                 Refuses(()=>{using(var other=new NativeReceiptJournal(lease,A)){}},"Concurrent writer accepted");
-                var note=journal.Present(Payload("first"));string receipt=(string)note["receipt"];
+                var note=journal.Present(OwnerPayload(lease,"first"));string receipt=(string)note["receipt"];
                 Refuses(()=>journal.BeginAcknowledgement(receipt,"wrong"),"Unobserved message accepted");
-                journal.BeginAcknowledgement(receipt,"first");journal.CompleteAcknowledgement(receipt);
+                Acknowledge(lease,journal,note,"first");
                 Refuses(()=>journal.BeginAcknowledgement(receipt,"first"),"Consumed receipt accepted");
             }
         });
@@ -101,12 +112,12 @@ public static class ReceiptTests {
             using(var journal=new NativeReceiptJournal(lease,B)) {
                 Expect(journal.NeedsReconciliation,"Interrupted attempt lost");
                 Refuses(()=>journal.Present(Payload("second")),"New work replaced ambiguous attempt");
-                Refuses(()=>journal.CompleteAcknowledgement(receipt),"New generation invented completion");
+                Refuses(()=>journal.CompleteAcknowledgement(receipt,null),"New generation invented completion");
             }
         });
         Case("completed receipt remains consumed after restart",lease=>{
-            string receipt;
-            using(var journal=new NativeReceiptJournal(lease,A)) {receipt=(string)journal.Present(Payload("first"))["receipt"];journal.BeginAcknowledgement(receipt,"first");journal.CompleteAcknowledgement(receipt);}
+            Targets(lease);string receipt;
+            using(var journal=new NativeReceiptJournal(lease,A)) {var delivery=journal.Present(OwnerPayload(lease,"first"));receipt=(string)delivery["receipt"];Acknowledge(lease,journal,delivery,"first");}
             using(var journal=new NativeReceiptJournal(lease,B)) {
                 Expect(!journal.NeedsReconciliation,"Completed attempt became ambiguous");
                 Refuses(()=>journal.BeginAcknowledgement(receipt,"first"),"Completed predecessor replay accepted");
@@ -114,12 +125,29 @@ public static class ReceiptTests {
             }
         });
         Case("multiple cycles retain independent consumed receipts",lease=>{
+            Targets(lease);
             using(var journal=new NativeReceiptJournal(lease,A)) {
-                string first=(string)journal.Present(Payload("first"))["receipt"];
-                journal.BeginAcknowledgement(first,"first");journal.CompleteAcknowledgement(first);
-                string second=(string)journal.Present(Payload("second"))["receipt"];
+                var firstDelivery=journal.Present(OwnerPayload(lease,"first"));string first=(string)firstDelivery["receipt"];
+                Acknowledge(lease,journal,firstDelivery,"first");Targets(lease);File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:recovery-second\n");
+                var secondDelivery=journal.Present(OwnerPayload(lease,"second"));string second=(string)secondDelivery["receipt"];
                 Refuses(()=>journal.BeginAcknowledgement(first,"first"),"Earlier cycle replay accepted");
-                journal.BeginAcknowledgement(second,"second");journal.CompleteAcknowledgement(second);
+                Acknowledge(lease,journal,secondDelivery,"second");
+            }
+        });
+        Case("zero-exit completion requires exact affirmative owner evidence",lease=>{
+            Targets(lease);
+            using(var journal=new NativeReceiptJournal(lease,A)) {
+                var delivery=journal.Present(OwnerPayload(lease,"first"));string receipt=(string)delivery["receipt"],evidence=(string)delivery["ownerEvidence"];
+                journal.BeginAcknowledgement(receipt,"first",NativeAcknowledgementEvidence.Capture(lease,delivery));
+                string before=File.ReadAllText(Path.Combine(lease.Home,"owner-receipts.jsonl"));
+                Refuses(()=>journal.CompleteAcknowledgement(receipt,null),"Missing zero-exit response completed an acknowledgement");
+                Refuses(()=>journal.CompleteAcknowledgement(receipt,"{broken"),"Malformed zero-exit response completed an acknowledgement");
+                Refuses(()=>journal.CompleteAcknowledgement(receipt,Json.Serialize(new Dictionary<string,object>{{"acknowledged",true},{"ownerEvidence","mismatch"}})),"Mismatched zero-exit response completed an acknowledgement");
+                Refuses(()=>journal.CompleteAcknowledgement(receipt,Json.Serialize(new Dictionary<string,object>{{"acknowledged",false},{"ownerEvidence",evidence}})),"Negative zero-exit response completed an acknowledgement");
+                Refuses(()=>journal.CompleteAcknowledgement(receipt,Completion(delivery)),"Unperformed effect completed from response data alone");
+                Expect(before==File.ReadAllText(Path.Combine(lease.Home,"owner-receipts.jsonl")),"Rejected completion response changed the journal");
+                OwnerAcknowledge(lease,delivery);journal.CompleteAcknowledgement(receipt,Completion(delivery));
+                Expect(!journal.NeedsReconciliation,"Affirmatively proven completion remained unresolved");
             }
         });
         Case("returned objects cannot change persisted target",lease=>{
@@ -231,7 +259,7 @@ public static class ReceiptTests {
                     journal.BeginAcknowledgement(receipt,"concurrent",evidence);
                     if(timing=="after-ack-started")ZeroRecovery(lease,"append");
                     Expect(File.ReadAllText(Path.Combine(lease.Home,"state",".watcher-down")).Contains(":"+generation+"\n"),"Concurrent wake changed the recovery generation");
-                    OwnerAcknowledge(lease,delivery);journal.CompleteAcknowledgement(receipt);
+                    OwnerAcknowledge(lease,delivery);journal.CompleteAcknowledgement(receipt,Completion(delivery));
                 }
                 string queue=File.ReadAllText(Queue(lease));
                 Expect(queue.Contains("later-notification")&&!queue.Contains("inbox:note-id"),"Acknowledgement did not retain only the later wake");

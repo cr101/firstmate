@@ -100,7 +100,7 @@ public static partial class NativeOwner {
                 if(process.ExitCode!=0)throw new InvalidOperationException("Environment test child failed");
             }
             var leaked=Json.Deserialize<string[]>(File.ReadAllText(result));
-            if(File.Exists(injected)||leaked.Length!=5)throw new InvalidOperationException("Denied inherited environment reached the native host");
+            if(File.Exists(injected)||leaked.Length!=4)throw new InvalidOperationException("Denied inherited environment reached the native host");
             foreach(string key in leaked)if(!key.StartsWith("FM_PROBE_",StringComparison.Ordinal))throw new InvalidOperationException("Unexpected inherited environment reached the native host");
             Console.WriteLine("PASS: inherited Windows environment denylist is case-insensitive");
             string residual=Path.Combine(directory,"residual"),residualState=Path.Combine(residual,"state"),status=Path.Combine(residualState,"orphan.status");
@@ -140,6 +140,11 @@ public static partial class NativeOwner {
             refused=false;try{EmptyFleet(steering);using(var lease=new NativeHomeLease(steering)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(message)!=messageBody||File.Exists(Path.Combine(steering,"owner-probe.json"))||File.Exists(Path.Combine(steeringState,".lock")))throw new InvalidOperationException("Orphan steering work passed admission or caused lease or route activity");
             Console.WriteLine("PASS: orphan steering work is preserved without lease or route activity");
+            string turnEnded=Path.Combine(directory,"turn-ended"),turnEndedState=Path.Combine(turnEnded,"state"),turnEndedRecord=Path.Combine(turnEndedState,"orphan.turn-ended");
+            Directory.CreateDirectory(turnEndedState);File.WriteAllText(turnEndedRecord,"preserve\n");
+            refused=false;try{EmptyFleet(turnEnded);using(var lease=new NativeHomeLease(turnEnded)){} }catch(InvalidOperationException){refused=true;}
+            if(!refused||File.ReadAllText(turnEndedRecord)!="preserve\n"||File.Exists(Path.Combine(turnEnded,"owner-probe.json"))||File.Exists(Path.Combine(turnEndedState,".lock")))throw new InvalidOperationException("Residual turn-end work passed admission or caused lease activity");
+            Console.WriteLine("PASS: residual turn-end work is preserved without lease activity");
             string supported=Path.Combine(directory,"supported-notification"),supportedState=Path.Combine(supported,"state"),supportedInbox=Path.Combine(supportedState,"inbox"),supportedNote=Path.Combine(supportedInbox,"note-id.note"),supportedQueue=Path.Combine(supportedState,".wake-queue"),supportedMarker=Path.Combine(supportedState,".watcher-down"),supportedBody="preserve notification\n";
             Directory.CreateDirectory(supportedInbox);File.WriteAllText(supportedNote,supportedBody);File.WriteAllText(supportedQueue,"1\t1\tcheck\tinbox:note-id\tcaptain inbox note\n");File.WriteAllText(supportedMarker,"pending:handling:supported\n");
             EmptyFleet(supported);
@@ -206,6 +211,7 @@ public static partial class NativeOwner {
                 recoveredAcknowledgements=operationJournal.ReconcileCompletedAcknowledgements();
             }
             var values = EnvironmentFor(pipeName, session, home, nonce);
+            values["FM_PROBE_EXE"]=OwnExe;
             if(config.ContainsKey("ownerExercise") && (bool)config["ownerExercise"]) {
                 if(!config.ContainsKey("jqImage") || string.IsNullOrWhiteSpace((string)config["jqImage"])) throw new ArgumentException("Owner exercise requires an explicit local jq image");
                 values["FM_PROBE_JQ_IMAGE"]=(string)config["jqImage"];
@@ -220,7 +226,7 @@ public static partial class NativeOwner {
             }
             if(config.ContainsKey("ackFault")) {
                 string fault=(string)config["ackFault"];
-                if(!values.ContainsKey("FM_PROBE_API_DRY") || (fault!="partial" && fault!="complete")) throw new ArgumentException("Fault injection is limited to the model-free fixture");
+                if(!values.ContainsKey("FM_PROBE_API_DRY") || (fault!="partial" && fault!="complete" && fault!="zero-missing" && fault!="zero-malformed" && fault!="zero-mismatched" && fault!="zero-unproven")) throw new ArgumentException("Fault injection is limited to the model-free fixture");
                 values["FM_PROBE_ACK_FAULT"]=fault;
             }
             if(lease!=null) values["FM_HOME"]=lease.Home.Replace('\\','/');

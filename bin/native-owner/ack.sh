@@ -13,4 +13,4 @@ fm_session_lock_owned_by_self "$FM_HOME/state"
 request="$LOG/notification-ack-request.json"
 evidence=$(jq -er '.ownerEvidence | select(type == "string" and length > 0)' "$request")
 printf '%s' "$evidence" | bash bin/native-owner/ack-evidence.sh acknowledge-token
-printf '{"acknowledged":true}\n' > "$LOG/notification-ack.json"
+jq -n --arg ownerEvidence "$evidence" '{acknowledged:true,ownerEvidence:$ownerEvidence}' > "$LOG/notification-ack.json"

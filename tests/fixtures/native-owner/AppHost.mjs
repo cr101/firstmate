@@ -28,7 +28,7 @@ async function native(action,extra={},signal) {
     socket.on('error',reject);socket.on('close',()=>{signal?.removeEventListener('abort',abort);if(!done)reject(Error('Native channel closed without a result'));});
    });
    if(!result.notificationAuthorized)throw Error('Native controller denied host adapter');
-   evidence.native.push({action,state:result.operationState,startupExpired:result.startupExpired});
+    evidence.native.push({action,state:result.operationState,startupExpired:result.startupExpired,operationExit:result.operationExit});
    return result;
   } catch(error) {if(!['EBUSY','ENOENT'].includes(error.code)||Date.now()>until)throw error;await pause(40);}
  }
@@ -116,15 +116,18 @@ try {
  if(process.env.FM_PROBE_API_DRY==='1') {
   const delivery=await operation('check');
   const ack=await operation('ack',{receipt:delivery.notification.receipt,observed:delivery.notification.challenge});
-  if(process.env.FM_PROBE_ACK_FAULT) {
-   if(ack.operationState!=='interrupted')throw Error('Fault injection did not interrupt the acknowledgement');
-   evidence.ackFault=process.env.FM_PROBE_ACK_FAULT;
-  } else {
+   if(['partial','complete'].includes(process.env.FM_PROBE_ACK_FAULT)) {
+    if(ack.operationState!=='interrupted')throw Error('Fault injection did not interrupt the acknowledgement');
+    evidence.ackFault=process.env.FM_PROBE_ACK_FAULT;
+   } else if(process.env.FM_PROBE_ACK_FAULT) {
+    if(ack.operationState!=='reconciliation-required')throw Error('Zero-exit acknowledgement without exact completion evidence was accepted');
+    evidence.ackFault=process.env.FM_PROBE_ACK_FAULT;
+   } else {
    const replay=await native('ack',{receipt:delivery.notification.receipt,observed:delivery.notification.challenge});
    if(ack.operationState!=='acknowledged'||replay.operationState!=='denied')throw Error('Native bridge preflight failed');
   }
   evidence.passed=true;evidence.modelFree=true;
-  console.log(evidence.ackFault?'PASS: fixed acknowledgement interrupted at the requested durable boundary; model-free only.':'PASS: registered post-startup operations deliver and acknowledge using the native bridge; model-free only.');
+  console.log(evidence.ackFault?'PASS: fixed acknowledgement fault preserved the reconciliation obligation; model-free only.':'PASS: registered post-startup operations deliver and acknowledge using the native bridge; model-free only.');
  } else {
  evidence.primaryTurn=await turn(primary,'This is a bounded integration test in an empty disposable Firstmate home. Use only the supplied fm_notification tools; do not use shell, file, browser, or other tools. Call fm_notification_check once. Read the message, then call fm_notification_ack with its receipt and the observed challenge. After successful acknowledgement, repeat that same acknowledgement exactly once to test replay rejection. Report the three results and stop. Do not retry anything else.');
  if(!acknowledged)throw Error('Primary did not acknowledge notification');

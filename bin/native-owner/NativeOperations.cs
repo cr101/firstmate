@@ -10,15 +10,20 @@ public static partial class NativeOwner {
     static NativeReceiptJournal operationJournal;
     static bool shutdownRequested;
     internal static string CodeRoot { get { return Path.GetDirectoryName(Path.GetDirectoryName(OwnExe)); } }
+    static SortedDictionary<string,string> TrustedBaseEnvironment() {
+        var values=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        foreach(string key in new [] {"SystemRoot","WINDIR","TEMP","TMP","USERPROFILE","APPDATA","LOCALAPPDATA"}) {
+            string value=Environment.GetEnvironmentVariable(key);if(value!=null)values[key]=value;
+        }
+        values["PATH"]=@"C:\Program Files\Git\usr\bin;C:\Windows\System32;C:\Windows;C:\Program Files\nodejs;C:\Program Files\GitHub CLI;"+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"npm");
+        return values;
+    }
     internal static ProcessStartInfo BashHelper(string script,string arguments,string home,bool includeProbe=false) {
         var start=new ProcessStartInfo(@"C:\Program Files\Git\bin\bash.exe","--noprofile --norc "+Quote(script.Replace('\\','/'))+(string.IsNullOrEmpty(arguments) ? "" : " "+arguments)) {UseShellExecute=false,CreateNoWindow=true};
         start.EnvironmentVariables.Clear();
-        foreach(string key in new [] {"SystemRoot","WINDIR","TEMP","TMP","USERPROFILE","APPDATA","LOCALAPPDATA"}) {
-            string value=Environment.GetEnvironmentVariable(key);if(value!=null)start.EnvironmentVariables[key]=value;
-        }
-        start.EnvironmentVariables["PATH"]=@"C:\Program Files\Git\usr\bin;C:\Windows\System32;C:\Windows;C:\Program Files\nodejs;C:\Program Files\GitHub CLI;"+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"npm");
+        foreach(var entry in TrustedBaseEnvironment())start.EnvironmentVariables[entry.Key]=entry.Value;
         if(includeProbe) {
-            foreach(string key in new [] {"FM_PROBE_PIPE","FM_PROBE_SESSION","FM_PROBE_HOME","FM_PROBE_NONCE","FM_PROBE_EXE","FM_PROBE_JQ_IMAGE","FM_PROBE_VERIFY_ONLY"}) {
+            foreach(string key in new [] {"FM_PROBE_PIPE","FM_PROBE_SESSION","FM_PROBE_HOME","FM_PROBE_NONCE","FM_PROBE_JQ_IMAGE","FM_PROBE_VERIFY_ONLY"}) {
                 string value=Environment.GetEnvironmentVariable(key);if(value!=null)start.EnvironmentVariables[key]=value;
             }
         }
@@ -56,7 +61,6 @@ public static partial class NativeOwner {
         }
         result["FM_PROBE_PIPE"] = pipe; result["FM_PROBE_SESSION"] = session;
         result["FM_PROBE_HOME"] = home; result["FM_PROBE_NONCE"] = nonce;
-        result["FM_PROBE_EXE"] = OwnExe;
         return result;
     }
     static ChildScope StartOwnerOperation(IntPtr parentJob, IntPtr environment, string home, ref SI startup, string purpose="startup") {
@@ -67,17 +71,13 @@ public static partial class NativeOwner {
         try {
             NativeOperationLifetime.Configure(scope.job);
             string operation=purpose=="startup" ? "owner-operation" : "notification-operation "+purpose;
-            var values=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
-            foreach(string key in new [] {"SystemRoot","WINDIR","TEMP","TMP","USERPROFILE","APPDATA","LOCALAPPDATA"}) {
-                string value=Environment.GetEnvironmentVariable(key); if(value!=null) values[key]=value;
-            }
-            values["PATH"]=@"C:\Program Files\Git\usr\bin;C:\Windows\System32;C:\Windows;C:\Program Files\nodejs;C:\Program Files\GitHub CLI;"+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"npm");
+            var values=TrustedBaseEnvironment();
             int offset=0;
             while(Marshal.ReadInt16(environment,offset)!=0) {
                 string entry=Marshal.PtrToStringUni(IntPtr.Add(environment,offset)); offset+=(entry.Length+1)*2;
                 int split=entry.IndexOf('='); if(split<=0) continue;
                 string key=entry.Substring(0,split);
-                if(key.StartsWith("FM_PROBE_",StringComparison.Ordinal) || key=="FM_HOME" || key=="MSYS") values[key]=entry.Substring(split+1);
+                if(key.StartsWith("FM_PROBE_",StringComparison.OrdinalIgnoreCase) || string.Equals(key,"FM_HOME",StringComparison.OrdinalIgnoreCase) || string.Equals(key,"MSYS",StringComparison.OrdinalIgnoreCase)) values[key]=entry.Substring(split+1);
             }
             var block=new StringBuilder(); foreach(var value in values) block.Append(value.Key).Append('=').Append(value.Value).Append('\0'); block.Append('\0');
             operationEnvironment=Marshal.StringToHGlobalUni(block.ToString());
@@ -120,16 +120,21 @@ public static partial class NativeOwner {
             verdict["operationExit"]=code;
             if(code!=0) { verdict["operationState"]="failed"; return; }
             string file=Path.Combine(home,"notification-"+pendingOperation.purpose+".json");
-            var output=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file));
             if(pendingOperation.purpose=="check") {
+                var output=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file));
                 if(output.ContainsKey("quiet") && (bool)output["quiet"]) { delivered=null;receipt=null; }
                 else {delivered=operationJournal.Present(output);receipt=(string)delivered["receipt"];}
                 consumed=false;
-            } else { operationJournal.CompleteAcknowledgement(receipt);consumed=true; }
+            } else {
+                try { operationJournal.CompleteAcknowledgement(receipt,File.ReadAllText(file));consumed=true; }
+                catch(IOException) { verdict["operationState"]="reconciliation-required";verdict["reconciliationRequired"]=true; }
+                catch(UnauthorizedAccessException) { verdict["operationState"]="reconciliation-required";verdict["reconciliationRequired"]=true; }
+            }
             NativeOperationLifetime.Stop(pendingOperation.job,1500);
             scopes.Remove(pendingOperation);
             CloseHandle(pendingOperation.process.thread);CloseHandle(pendingOperation.process.process);CloseHandle(pendingOperation.job);
             pendingOperation=null;
+            if(verdict.ContainsKey("reconciliationRequired")) return;
         }
         if(action=="result") {
             verdict["operationState"]=pendingOperation!=null ? "pending" : operationJournal.NeedsReconciliation ? "reconciliation-required" : consumed ? "acknowledged" : delivered!=null ? "delivered" : "quiet";

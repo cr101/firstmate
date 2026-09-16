@@ -83,11 +83,17 @@ public sealed class NativeReceiptJournal : IDisposable {
         Append("ack-started",receipt,Copy(payload),evidence==null ? null : evidence.Record());
         return Delivery(receipts[receipt]);
     }
-    public void CompleteAcknowledgement(string receipt) {
+    public void CompleteAcknowledgement(string receipt,string completion) {
         EnsureOpen();
         Dictionary<string,object> row;
         if(receipt==null || !receipts.TryGetValue(receipt,out row) || (string)row["generation"]!=generation || (string)row["event"]!="ack-started") throw new InvalidOperationException("No matching acknowledgement attempt");
-        Append("acknowledged",receipt,Copy((Dictionary<string,object>)row["payload"]),Evidence(row));
+        Dictionary<string,object> response;
+        try { response=json.Deserialize<Dictionary<string,object>>(completion); }
+        catch(Exception error) { throw new IOException("Acknowledgement completion response is malformed; preserved",error); }
+        object acknowledged,responseEvidence;string evidence=Evidence(row) as string;
+        if(response==null || !response.TryGetValue("acknowledged",out acknowledged) || !(acknowledged is bool) || !(bool)acknowledged || !response.TryGetValue("ownerEvidence",out responseEvidence) || !(responseEvidence is string) || string.IsNullOrEmpty(evidence) || (string)responseEvidence!=evidence) throw new IOException("Acknowledgement completion evidence does not match the persisted target; preserved");
+        if(!NativeAcknowledgementEvidence.Completed(lease,evidence)) throw new IOException("Acknowledgement effect lacks affirmative owner evidence; preserved");
+        Append("acknowledged",receipt,Copy((Dictionary<string,object>)row["payload"]),evidence);
     }
     static object Evidence(Dictionary<string,object> row) {
         object value;return row.TryGetValue("targetEvidence",out value) ? value : null;

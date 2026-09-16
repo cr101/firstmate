@@ -170,12 +170,8 @@ fi
 # grace-based predicate (bin/fm-supervision-lib.sh), which owns what needs
 # supervision.
 fm_supervision_status "$STATE" "$GRACE"
-in_flight=$FM_SUP_IN_FLIGHT
-sources=$FM_SUP_SOURCES
-checks=$FM_SUP_CHECKS
-check_inputs=$FM_SUP_CHECK_INPUTS
-pending_replies=$FM_SUP_PENDING_REPLIES
-reconcile_requests=$FM_SUP_RECONCILE_REQUESTS
+reason_count=$FM_SUP_REASON_COUNT
+reason_label=$FM_SUP_REASON_LABEL
 needed=$FM_SUP_NEEDED
 beacon_desc=$FM_SUP_BEACON_DESC
 fm_watcher_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$FM_HOME" "$FM_ROOT"
@@ -237,18 +233,8 @@ if [ "$watcher_healthy" = false ]; then
       else
         watcher_cause=$(printf 'no watcher has a fresh beacon (last beat: %s, grace %ss)' "$beacon_desc" "$GRACE")
       fi
-      if [ "$in_flight" -gt 0 ]; then
-        printf '●  %s task(s) in flight, but %s.\n' "$in_flight" "$watcher_cause"
-      elif [ "$sources" -gt 0 ]; then
-        printf '●  %s process-event source(s) registered, but %s.\n' "$sources" "$watcher_cause"
-      elif [ "$checks" -gt 0 ]; then
-        printf '●  %s registered custom check(s), but %s.\n' "$checks" "$watcher_cause"
-      elif [ "$check_inputs" -gt 0 ]; then
-        printf '●  %s state check input(s), but %s.\n' "$check_inputs" "$watcher_cause"
-      elif [ "$pending_replies" -gt 0 ]; then
-        printf '●  %s pending secondmate reply record(s), but %s.\n' "$pending_replies" "$watcher_cause"
-      elif [ "$reconcile_requests" -gt 0 ]; then
-        printf '●  %s secondmate reconcile request(s), but %s.\n' "$reconcile_requests" "$watcher_cause"
+      if [ "$reason_count" -gt 0 ]; then
+        printf '●  %s %s, but %s.\n' "$reason_count" "$reason_label" "$watcher_cause"
       else
         printf '●  X-mode relay polling needs supervision, but %s.\n' "$watcher_cause"
       fi

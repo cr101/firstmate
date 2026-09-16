@@ -16,9 +16,28 @@ request="$LOG/notification-ack-request.json"
 note=$(jq -r .note "$request")
 seq=$(jq -r .seq "$request")
 generation=$(jq -r .generation "$request")
+evidence=$(jq -er '.ownerEvidence | select(type == "string" and length > 0)' "$request")
 case "$note" in ''|*[!A-Za-z0-9._-]*) exit 2 ;; esac
 case "$seq" in ''|*[!0-9]*) exit 2 ;; esac
 case "$generation" in ''|*[!A-Za-z0-9._-]*) exit 2 ;; esac
+case "${FM_PROBE_ACK_FAULT:-}" in
+  zero-missing)
+    rm -f "$LOG/notification-ack.json"
+    exit 0
+    ;;
+  zero-malformed)
+    printf '{broken\n' > "$LOG/notification-ack.json"
+    exit 0
+    ;;
+  zero-mismatched)
+    jq -n --arg ownerEvidence mismatch '{acknowledged:true,ownerEvidence:$ownerEvidence}' > "$LOG/notification-ack.json"
+    exit 0
+    ;;
+  zero-unproven)
+    jq -n --arg ownerEvidence "$evidence" '{acknowledged:true,ownerEvidence:$ownerEvidence}' > "$LOG/notification-ack.json"
+    exit 0
+    ;;
+esac
 bin/fm-inbox.sh drain --ack "$note" > "$LOG/cycle-inbox-ack.log"
 if [ "${FM_PROBE_ACK_FAULT:-}" = partial ]; then
   printf 'partial\n' > "$LOG/ack-fault-ready"
@@ -33,4 +52,4 @@ if [ "${FM_PROBE_ACK_FAULT:-}" = complete ]; then
   sleep 30
   exit 125
 fi
-printf '{"acknowledged":true,"queueEmpty":true}\n' > "$LOG/notification-ack.json"
+jq -n --arg ownerEvidence "$evidence" '{acknowledged:true,queueEmpty:true,ownerEvidence:$ownerEvidence}' > "$LOG/notification-ack.json"

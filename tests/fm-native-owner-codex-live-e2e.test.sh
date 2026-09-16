@@ -17,5 +17,9 @@ node "$fixture/Run-Cycle.mjs" --dry
 node "$fixture/Run-Cycle.mjs" --dry --startup-queued
 node "$fixture/Run-Cycle.mjs" --dry --fault=partial
 node "$fixture/Run-Cycle.mjs" --dry --fault=complete
+node "$fixture/Run-Cycle.mjs" --dry --fault=zero-missing
+node "$fixture/Run-Cycle.mjs" --dry --fault=zero-malformed
+node "$fixture/Run-Cycle.mjs" --dry --fault=zero-mismatched
+node "$fixture/Run-Cycle.mjs" --dry --fault=zero-unproven
 node "$fixture/Run-Cycle.mjs"
 node "$fixture/Verify-Cycle.mjs"

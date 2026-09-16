@@ -72,13 +72,13 @@ const populated=path.join(area,'populated');fs.mkdirSync(path.join(populated,'st
 const blocked=start(populated);blocked.child.stdin.end();assert.notEqual((await bound(blocked.done,blocked,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(populated,'state/work.meta'),'utf8'),'preserve');assert.equal(fs.existsSync(path.join(populated,'owner-probe.json')),false);
 records.push('populated home refused without changing its records');
-for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrupted-close','state/orphan.backlog-close']]){
+for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrupted-close','state/orphan.backlog-close'],['residual-turn-end','state/orphan.turn-ended']]){
  const residualHome=path.join(area,name),record=path.join(residualHome,relative),contents='preserve residual task state';
  fs.mkdirSync(path.dirname(record),{recursive:true});fs.writeFileSync(record,contents);
  const refusedResidual=start(residualHome);refusedResidual.child.stdin.end();assert.notEqual((await bound(refusedResidual.done,refusedResidual,20000)).exit,0);
  assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(residualHome,'owner-probe.json')),false);
 }
-records.push('orphan status and interrupted-close records refused before lease acquisition and preserved');
+records.push('orphan status, interrupted-close, and turn-end records refused before lease acquisition and preserved');
 const maskedHome=path.join(area,'bash-env-mask'),maskedStatus=path.join(maskedHome,'state/orphan.status'),mask=path.join(area,'bash-env-exit.sh');
 fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maskedStatus,'preserve masked residual state');fs.writeFileSync(mask,'exit 0\n');
 const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);

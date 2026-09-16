@@ -11,7 +11,7 @@ const build=read(path.join(dir,'build.json'));
 const dry=process.argv.includes('--dry');
 const startupQueued=process.argv.includes('--startup-queued');
 const fault=process.argv.find(value=>value.startsWith('--fault='))?.slice(8);
-if(fault&&(!dry||!['partial','complete'].includes(fault)))throw Error('Fault cases require --dry and partial or complete');
+if(fault&&(!dry||!['partial','complete','zero-missing','zero-malformed','zero-mismatched','zero-unproven'].includes(fault)))throw Error('Fault cases require --dry and a registered fault mode');
 if(startupQueued&&!dry)throw Error('Queued-startup case requires model-free mode');
 if(!dry&&process.env.FM_LIVE_NATIVE_CODEX!=='1')throw Error('Live model test requires FM_LIVE_NATIVE_CODEX=1');
 if(!dry){const preflight=read(path.join(dir,'bridge-preflight.json'));if(!preflight.passed||preflight.binaryHash!==createHash('sha256').update(fs.readFileSync(build.binary)).digest('hex'))throw Error('Run model-free bridge preflight for this binary first');}
@@ -51,8 +51,9 @@ if(fault) {
  const queue=path.join(spec.leaseHome,'state/.wake-queue'),before=fs.readFileSync(queue);
  const journal=()=>fs.readFileSync(path.join(spec.leaseHome,'owner-receipts.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  const historyBefore=journal();
- if(historyBefore.at(-1).event!=='ack-started'||!native.receiptNeedsReconciliation)throw Error('Interrupted intent was not preserved');
+ if(historyBefore.at(-1).event!=='ack-started'||!native.receiptNeedsReconciliation)throw Error('Unresolved acknowledgement intent was not preserved');
  if(!host.shutdown.reconciliationRequired||!run.stderr.includes('Acknowledgement completion is unconfirmed. Its records are preserved and require reconciliation:'))throw Error('Shutdown did not surface the preserved reconciliation requirement');
+ if(fault.startsWith('zero-')&&!host.native.some(row=>row.action==='result'&&row.state==='reconciliation-required'&&row.operationExit===0))throw Error('The zero-exit completion refusal was not observed through the native controller');
  if((before.length===0)!==(fault==='complete'))throw Error('Fault did not land at the requested mutation boundary');
  const recovery=path.join(home,'recovery');fs.mkdirSync(recovery);
  const recoverySpec={home:recovery,leaseHome:spec.leaseHome,executable:build.binary,arguments:'sleep 100',timeoutSeconds:10,pipeAcl:'UserOnly'};
@@ -66,7 +67,7 @@ if(fault) {
  const history=journal();
  if(history.length!==historyBefore.length+(fault==='complete'?1:0))throw Error('Recovery started or recorded an unexpected acknowledgement');
  if(fault==='complete'&&(history.at(-1).event!=='recovered-acknowledged'||history.at(-1).ackGeneration!==native.probeGeneration||history.at(-1).generation!==recovered.probeGeneration))throw Error('Recovery generations are not bound');
- console.log(`PASS: actual ${fault} acknowledgement interruption; recovery ${fault==='complete'?'confirmed completed effects without replay':'preserved the unresolved partial mutation'}.`);
+ console.log(`PASS: actual ${fault} acknowledgement fault; recovery ${fault==='complete'?'confirmed completed effects without replay':'preserved the unresolved mutation'}.`);
  process.exit(0);
 }
 if(fs.existsSync(path.join(spec.leaseHome,'state/.wake-queue'))&&fs.readFileSync(path.join(spec.leaseHome,'state/.wake-queue'),'utf8').trim())throw Error('Queue was not acknowledged');

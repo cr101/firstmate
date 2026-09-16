@@ -104,7 +104,21 @@ test_predicate_source_needs_supervision() {
   fm_supervision_unhealthy "$state" 300 || fail "registered source with no beacon must be unhealthy"
   [ "$FM_SUP_IN_FLIGHT" -eq 0 ] || fail "a process-event source must not count as a task"
   [ "$FM_SUP_SOURCES" -eq 1 ] || fail "expected one registered process-event source"
+  [ "$FM_SUP_REASON_COUNT" -eq 1 ] && [ "$FM_SUP_REASON_LABEL" = 'process-event source(s) registered' ] \
+    || fail "the selected supervision reason did not identify the source"
   pass "fm_supervision_unhealthy: source-only home needs supervision"
+}
+
+test_predicate_turn_end_needs_supervision() {
+  local state="$TMP_ROOT/pred-turn-end/state"
+  mkdir -p "$state"
+  printf 'preserve\n' > "$state/orphan.turn-ended"
+  fm_supervision_unhealthy "$state" 300 || fail "a residual turn-end notification did not keep supervision active"
+  [ "$FM_SUP_TURN_ENDS" -eq 1 ] || fail "expected one turn-end notification, got $FM_SUP_TURN_ENDS"
+  [ "$FM_SUP_REASON_COUNT" -eq 1 ] && [ "$FM_SUP_REASON_LABEL" = 'turn-end notification(s) pending' ] \
+    || fail "the selected supervision reason did not identify the turn-end notification"
+  [ "$(cat "$state/orphan.turn-ended")" = preserve ] || fail "the supervision read changed the turn-end notification"
+  pass "fm_supervision_needed: a residual turn-end notification needs supervision"
 }
 
 # Register a custom check the way an operator does, through the real
@@ -2223,6 +2237,7 @@ test_predicate_healthy_fresh_beacon
 test_predicate_queue_pending_flag
 test_predicate_x_mode_needs_supervision
 test_predicate_source_needs_supervision
+test_predicate_turn_end_needs_supervision
 test_predicate_registered_check_needs_supervision
 test_predicate_registered_check_survives_rebinding_drift
 test_predicate_unregistered_check_needs_supervision
