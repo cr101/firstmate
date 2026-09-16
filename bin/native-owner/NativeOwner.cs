@@ -158,4 +158,14 @@ public static partial class NativeOwner {
             } finally { CloseHandle(server); }
         }
     }
+    static bool TryOwnerCommand(string[] args,out int result) {
+        result=0;
+        if(args.Length==3 && args[0]=="owner" && (args[1]=="identity" || args[1]=="owns" || args[1]=="harness")) {
+            result=OwnerClient(args[1],args[2],"");return true;
+        }
+        if(args.Length==4 && args[0]=="owner" && args[1]=="alive") {
+            result=OwnerClient(args[1],args[2],args[3]);return true;
+        }
+        return false;
+    }
 }

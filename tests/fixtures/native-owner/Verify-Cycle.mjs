@@ -14,6 +14,7 @@ const build=read(path.join(home,'build.json'));
 const host=read(path.join(home,'app-host-evidence.json'));
 const native=read(path.join(home,'result.json'));
 assert.equal(latest.exit,0);assert.equal(native.rootExit,0);assert.equal(host.passed,true);
+assert.deepEqual(host.externalTools,{appsFeatureEnabled:false,pluginsFeatureEnabled:false,enabledApps:[],configuredMcpServers:[],activeMcpServers:[]});
 assert.deepEqual(host.shutdown,{stopped:true,operationsStopped:true,exited:true,forced:false,errors:[]});
 assert.notEqual(host.primary,host.foreign);assert.equal(host.tools.length,4);
 const requests=host.frames.filter(frame=>frame.method==='item/tool/call');

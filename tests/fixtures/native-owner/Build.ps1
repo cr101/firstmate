@@ -12,6 +12,19 @@ $sources += @((Join-Path $repo 'bin/native-owner/NativeOperations.cs'), (Join-Pa
 Add-Type -Path $sources -OutputAssembly $binary -OutputType ConsoleApplication -ReferencedAssemblies System.dll,System.Core.dll,System.Web.Extensions.dll
 & $binary receipt-tests
 if ($LASTEXITCODE -ne 0) { throw 'Durable receipt lifecycle tests failed' }
+& $binary environment-tests
+if ($LASTEXITCODE -ne 0) { throw 'Native environment filtering tests failed' }
+$invalidState = Join-Path $root 'missing-state'
+$savedErrorPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $invalidOwner = @(& $binary owner alive $invalidState 'native:00000000000000000000000000000000' trailing 2>&1)
+    if ($LASTEXITCODE -ne 2 -or ($invalidOwner -join "`n") -notmatch 'usage: NativeOwner') { throw 'Owner CLI accepted a trailing argument' }
+    $invalidOwner = @(& $binary owner harness $invalidState trailing 2>&1)
+    if ($LASTEXITCODE -ne 2 -or ($invalidOwner -join "`n") -notmatch 'usage: NativeOwner') { throw 'Owner CLI accepted an ID for a fixed-shape verb' }
+} finally {
+    $ErrorActionPreference = $savedErrorPreference
+}
 $copy = Join-Path $root 'firstmate'
 & git -c core.symlinks=true clone --quiet --no-local --single-branch $repo $copy
 if ($LASTEXITCODE -ne 0) { throw 'Disposable clone failed' }
@@ -19,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Disposable clone failed' }
 foreach ($name in @('fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh')) { Copy-Item (Join-Path $repo ('bin/' + $name)) (Join-Path $copy ('bin/' + $name)) }
 foreach ($name in @('exercise.sh','notification-check.sh','notification-ack.sh')) { Copy-Item (Join-Path $PSScriptRoot $name) (Join-Path $copy $name) }
 Copy-Item (Join-Path $PSScriptRoot 'AppHost.mjs') (Join-Path $root 'AppHost.mjs')
-foreach ($module in @('codex-tool-gate.mjs','host-lifecycle.mjs')) { Copy-Item (Join-Path $repo ('bin/native-owner/' + $module)) (Join-Path $root $module) }
+foreach ($module in @('codex-tool-gate.mjs','host-lifecycle.mjs','app-server-policy.mjs')) { Copy-Item (Join-Path $repo ('bin/native-owner/' + $module)) (Join-Path $root $module) }
 Copy-Item $binary (Join-Path $copy 'bin/fm-native-owner.exe')
 New-Item -ItemType Directory (Join-Path $root 'tools') | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'jq') (Join-Path $root 'tools/jq')

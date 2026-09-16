@@ -17,8 +17,10 @@ fs.cpSync(path.join(repo,'bin/native-owner'),path.join(code,'bin/native-owner'),
 for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
 const launcher=path.join(code,'bin/fm-native-codex.ps1');
 command('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly']);
+const alias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
+assert.notEqual(alias.status,0,'The removed -Home alias was still accepted');
 function start(home,verify=true){
- const args=['-NoProfile','-File',launcher,'-Experimental','-Home',home,'-JqImage',image];if(verify)args.push('-VerifyOnly');
+ const args=['-NoProfile','-File',launcher,'-Experimental','-OperationalHome',home,'-JqImage',image];if(verify)args.push('-VerifyOnly');
  const child=spawn('powershell.exe',args,{stdio:['pipe','pipe','pipe']});let stdout='',stderr='';
  child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);child.stdin.on('error',()=>{});
  const done=new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',exit=>resolve({exit,stdout,stderr}));});

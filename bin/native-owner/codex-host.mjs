@@ -8,6 +8,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {createNotificationGate} from './codex-tool-gate.mjs';
 import {createHostLifecycle} from './host-lifecycle.mjs';
+import {discoverMcpServerNames,isolatedAppServerArgs,verifyExternalToolConfiguration,verifyExternalToolIsolation} from './app-server-policy.mjs';
 const runtime=process.env.FM_PROBE_HOME,root=process.env.FM_PROBE_CODE_ROOT;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let closing=false,gate=null,server=null,alive=false,thread=null,activeTurn=null,ended=false;
@@ -134,7 +135,8 @@ try {
  }
  if(!closing){
   const executable=path.join(process.env.APPDATA,'npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe');
-  server=spawn(executable,['app-server','--stdio','--disable','hooks','-c','windows.sandbox=unelevated'],{cwd:root,stdio:['pipe','pipe','pipe'],detached:true,windowsHide:true});alive=true;
+  const mcpServerNames=await discoverMcpServerNames(executable,root);
+  server=spawn(executable,isolatedAppServerArgs(mcpServerNames,['-c','windows.sandbox=unelevated']),{cwd:root,stdio:['pipe','pipe','pipe'],detached:true,windowsHide:true});alive=true;
   server.stderr.on('data',data=>fs.appendFileSync(path.join(runtime,'app-server.stderr'),data));
   const lost=error=>{alive=false;for(const waiter of pending.values())waiter.reject(error);pending.clear();if(!closing)fail(error);};
   server.on('error',lost);server.on('exit',()=>lost(Error('App-server exited')));server.stdin.on('error',error=>{if(!closing)fail(error);});
@@ -158,9 +160,10 @@ try {
    {name:'fm_notification_ack',description:'Acknowledge an observed and handled delivery. Never acknowledge unresolved decisions or unperformed work.',inputSchema:{type:'object',properties:{receipt:{type:'string'},observed:{type:'string'}},required:['receipt','observed'],additionalProperties:false}},
   ];
   const instructions='The native host already ran startup exactly once. Do not rerun startup or arm another supervisor. This experimental empty-fleet session supports only the two notification tools; do not claim to dispatch project work. The host continues notification checks after startup finishes. Use the supplied receipt and observed challenge only after handling the entire delivery. Unresolved work must remain pending. Startup digest follows:\n'+fs.readFileSync(path.join(runtime,'startup.log'),'utf8');
+  const externalConfiguration=await verifyExternalToolConfiguration(request,mcpServerNames);
   const started=await request('thread/start',{cwd:root,sandbox:'read-only',approvalPolicy:'never',ephemeral:true,developerInstructions:instructions,dynamicTools});
   if(started.sandbox?.type!=='readOnly'||started.sandbox.networkAccess!==false||started.approvalPolicy!=='never')throw Error('App-server returned an unexpected security policy');
-  thread=started.thread.id;evidence.thread=thread;evidence.ready=true;evidence.policy={sandbox:started.sandbox,approval:started.approvalPolicy};evidence.digestDeliveredBeforeDeferred=!fs.existsSync(path.join(runtime,'startup.finished'));save();
+  thread=started.thread.id;evidence.thread=thread;evidence.externalTools=await verifyExternalToolIsolation(request,thread,externalConfiguration);evidence.ready=true;evidence.policy={sandbox:started.sandbox,approval:started.approvalPolicy};evidence.digestDeliveredBeforeDeferred=!fs.existsSync(path.join(runtime,'startup.finished'));save();
   gate=createNotificationGate({primaryThread:thread,operate:operation,isAlive:()=>alive&&!closing});
   console.error('Experimental native session ready. /interrupt stops the current turn; /quit ends the session.');
   while(!closing&&alive){

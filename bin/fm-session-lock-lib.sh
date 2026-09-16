@@ -155,7 +155,11 @@ fm_native_owner_selected() {
 fm_native_owner_call() {
   local native_state
   native_state=$(cygpath -w "${FM_STATE_OVERRIDE:-${FM_HOME:?}/state}") || return 2
-  MSYS2_ARG_CONV_EXCL='*' "$FM_NATIVE_OWNER_BIN" owner "$1" "$native_state" "${2:-}"
+  case "$1" in
+    alive) MSYS2_ARG_CONV_EXCL='*' "$FM_NATIVE_OWNER_BIN" owner "$1" "$native_state" "${2:?}" ;;
+    identity|owns|harness) MSYS2_ARG_CONV_EXCL='*' "$FM_NATIVE_OWNER_BIN" owner "$1" "$native_state" ;;
+    *) return 2 ;;
+  esac
 }
 # Three states: 0 is live, 1 proven dead, 2 unknown. Do not turn exclusion
 # (unknown must preserve occupancy) into a positive health assertion.
@@ -341,11 +345,10 @@ EOF
 # kill -0 cannot see across that boundary and would report a live harness as
 # dead - which would hand a running session's home to a second one.
 fm_harness_pid_alive() {
-  local pid=$1 comm args winpid owner_rc
+  local pid=$1 comm args winpid
   case "$pid" in native:*)
-    if fm_native_owner_state "$pid"; then return 0; else owner_rc=$?; fi
-    # Compatibility for exclusion readers only; native health uses the state API.
-    [ "$owner_rc" -ne 1 ]; return ;;
+    fm_native_owner_state "$pid"
+    return ;;
   esac
   if winpid=$(fm_win_untag_pid "$pid"); then
     comm=$(fm_win_command "$winpid") || return 1
@@ -356,6 +359,16 @@ fm_harness_pid_alive() {
   comm=$(fm_ps_comm "$pid") || return 1
   args=$(fm_ps_args "$pid")
   fm_harness_process_matches "$comm" "$args"
+}
+
+fm_harness_pid_excludes() {
+  local pid=$1 owner_rc
+  case "$pid" in native:*)
+    if fm_native_owner_state "$pid"; then return 0; else owner_rc=$?; fi
+    [ "$owner_rc" -ne 1 ]
+    return ;;
+  esac
+  fm_harness_pid_alive "$pid"
 }
 
 # True when state dir $1 holds a session lock whose pid is ANY harness ancestor

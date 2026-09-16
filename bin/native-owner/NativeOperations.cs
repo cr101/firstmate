@@ -18,8 +18,8 @@ public static partial class NativeOwner {
         var result = new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry e in Environment.GetEnvironmentVariables()) {
             string k = (string)e.Key;
-            if (k=="NODE_OPTIONS" || k=="NODE_PATH" || k=="BASH_ENV" || k=="ENV") continue;
-            if (k.StartsWith("FM_", StringComparison.OrdinalIgnoreCase) || k.StartsWith("PI_", StringComparison.OrdinalIgnoreCase) || k.StartsWith("NO_MISTAKES", StringComparison.OrdinalIgnoreCase) || k == "CLAUDE_PID" || k == "CLAUDECODE") continue;
+            if (string.Equals(k,"NODE_OPTIONS",StringComparison.OrdinalIgnoreCase) || string.Equals(k,"NODE_PATH",StringComparison.OrdinalIgnoreCase) || string.Equals(k,"BASH_ENV",StringComparison.OrdinalIgnoreCase) || string.Equals(k,"ENV",StringComparison.OrdinalIgnoreCase)) continue;
+            if (k.StartsWith("FM_", StringComparison.OrdinalIgnoreCase) || k.StartsWith("PI_", StringComparison.OrdinalIgnoreCase) || k.StartsWith("NO_MISTAKES", StringComparison.OrdinalIgnoreCase) || string.Equals(k,"CLAUDE_PID",StringComparison.OrdinalIgnoreCase) || string.Equals(k,"CLAUDECODE",StringComparison.OrdinalIgnoreCase)) continue;
             result[k] = (string)e.Value;
         }
         result["FM_PROBE_PIPE"] = pipe; result["FM_PROBE_SESSION"] = session;

@@ -583,6 +583,12 @@ test_native_state_contract() (
     rc=0; fm_native_owner_state "$identity" || rc=$?
     [ "$rc" -eq "$answer" ] || fail "native three-state result collapsed"
     rc=0; fm_harness_pid_alive "$identity" || rc=$?
+    if [ "$answer" -eq 0 ]; then
+      [ "$rc" -eq 0 ] || fail "proven-live native owner lost positive health"
+    else
+      [ "$rc" -ne 0 ] || fail "dead or unknown native owner reported positive health"
+    fi
+    rc=0; fm_harness_pid_excludes "$identity" || rc=$?
     if [ "$answer" -eq 1 ]; then
       [ "$rc" -ne 0 ] || fail "proven-dead owner retained occupancy"
     else
@@ -598,7 +604,54 @@ test_native_state_contract() (
   pass "native identity routing preserves unknown exclusion without certifying health"
 )
 
+test_native_status_and_acquisition_behavior() {
+  local dir bindir fakebin identity out rc
+  dir="$TMP_ROOT/native-status"
+  bindir="$dir/bin"
+  fakebin="$dir/fakebin"
+  identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  mkdir -p "$bindir" "$fakebin" "$dir/state"
+  cp "$ROOT/bin/fm-lock.sh" "$ROOT/bin/fm-session-lock-lib.sh" "$ROOT/bin/fm-wake-lib.sh" "$bindir/"
+  cat > "$bindir/fm-native-owner.exe" <<'SH'
+#!/usr/bin/env bash
+case "${2:-}" in
+  alive) exit "${FM_TEST_NATIVE_STATE:?}" ;;
+  identity) printf '%s\n' 'native:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; exit 0 ;;
+  *) exit 2 ;;
+esac
+SH
+  cat > "$fakebin/cygpath" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${@: -1}"
+SH
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *comm=*) printf '%s\n' codex ;;
+  *args=*) printf '%s\n' codex ;;
+  *ppid=*) printf '%s\n' 1 ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$bindir/fm-native-owner.exe" "$bindir/fm-lock.sh" "$fakebin/cygpath" "$fakebin/ps"
+  printf '%s\n' "$identity" > "$dir/state/.lock"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_TEST_NATIVE_STATE=2 "$bindir/fm-lock.sh" status)
+  case "$out" in
+    *'held by native owner with unconfirmed health'*) ;;
+    *) fail "unknown native owner status was not distinguished: $out" ;;
+  esac
+  case "$out" in *'held by live harness'*) fail "unknown native owner status reported positive health" ;; esac
+  set +e
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_TEST_NATIVE_STATE=2 "$bindir/fm-lock.sh" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "unknown native owner did not exclude acquisition"
+  [ "$(cat "$dir/state/.lock")" = "$identity" ] || fail "unknown native owner was overwritten during acquisition"
+  pass "native lock status distinguishes unknown health while acquisition remains excluded"
+}
+
 test_native_state_contract
+test_native_status_and_acquisition_behavior
 test_version_named_session_is_identified_on_both_platforms
 test_harness_at_namespace_pid1_is_examined
 test_ordinary_paths_are_never_harness_processes

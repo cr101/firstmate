@@ -9,15 +9,7 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 ## Experimental native Windows ownership candidate
 
 Verified on 2026-09-15 and 2026-09-16 with Codex app-server 0.154.0, Windows 10.0.26200 x86_64, and the saved unelevated Windows sandbox.
-This is an isolated candidate verification, not an installed runtime backend or a claim that ordinary Codex shell tools can run Git Bash in that sandbox.
-The native controller, interactive app-server host, fixed operation scripts, and request policy live under `bin/native-owner/`.
-`bin/fm-native-codex.ps1` owns explicit launch and local compilation; its PowerShell help documents prerequisites and flags.
-It does not install hooks, alter saved settings, pull images, or select a new default backend.
-The home reservation rejects locations outside the user's Windows temporary directory and existing reparse-point ancestors.
-Existing fleet metadata, projects, registrations, Relay configuration, and process-event sources are refused.
-Those checks retain the experimental boundary rather than proving race-free paths or populated-fleet support.
-Ordinary homes do not opt in; the real session-lock, harness, and startup-nudge readers select the native provider only from native home records.
-The test-only consumer patch has been removed.
+[`../native-windows-codex.md`](../native-windows-codex.md) owns current setup, safety boundaries, and supported limits for this isolated candidate.
 
 Refresh the portable request-policy regression with:
 
@@ -35,6 +27,19 @@ The guard also retains the exclusive-owner, normal-exit, controller-loss, orphan
 ```sh
 bash tests/fm-native-owner-receipt-live-e2e.test.sh
 ```
+
+Refresh effective app and MCP isolation without a model turn:
+
+```sh
+FM_LIVE_NATIVE_APP_POLICY=1 bash tests/fm-native-owner-app-server-policy-live-e2e.test.sh
+```
+
+Observed terminal result:
+
+```text
+PASS: effective app and MCP catalogs are isolated {"appsFeatureEnabled":false,"pluginsFeatureEnabled":false,"configuredMcpServers":["inherited_probe"],"enabledMcpServers":[],"exposedApps":[],"activeMcpServers":[]}
+```
+
 Refresh the actual Windows integration with the explicit two-model-turn guard:
 
 ```sh
@@ -73,18 +78,6 @@ The launch-bound owner record preserves verified-dead predecessor generations ac
 That history is bounded and refuses further acquisition rather than silently forgetting evidence.
 An unresolved acknowledgement prevents more work and identifies the preserved journal for review; no partial attempt is retried or rolled back automatically.
 
-Build without launching, then explicitly test an empty temporary home from Windows PowerShell:
-
-```powershell
-.\bin\fm-native-codex.ps1 -BuildOnly
-.\bin\fm-native-codex.ps1 -Experimental -VerifyOnly `
-  -Home "$env:LOCALAPPDATA\Temp\firstmate-native-example" -JqImage <existing-local-image>
-```
-
-Omit `-VerifyOnly` for an interactive model session.
-The local image must contain jq and GNU timeout; this command does not install them.
-The native provider must be rebuilt when its source stamp changes.
-
 Refresh the actual launcher without model turns, then optionally exercise two notification turns and active-turn cancellation:
 
 ```sh
@@ -101,11 +94,6 @@ Two later inbox notifications each initiated a real model turn without another s
 A separate shutdown interrupted an active model turn, confirmed app-server exit, and preserved the pending notification.
 The production launcher also refused a real partially acknowledged journal from the fault-injection fixture and surfaced the reconciliation requirement without starting the model.
 Fixture delays and controlled notifications remain under `tests/fixtures/native-owner/`; the launcher contains no test message generator.
-
-Production use remains disabled.
-These results do not establish populated-fleet shutdown, forced app-server descendant cleanup, adversarial Windows path/process races, PID reuse and peer-handle races, integration of every numeric identity reader, other harness support, or installation and packaging.
-The shared-reader rollout remains deliberately limited to the explicit empty-fleet launcher; Pi, OMP, OpenCode, and fleet lease consumers are not claimed supported.
-Full no-mistakes validation has not run, and no publication or merge is authorized by these targeted tests.
 
 ## Harness detection precedence
 

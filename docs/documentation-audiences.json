@@ -103,6 +103,10 @@
       "target": "docs/verification/runtime-backends.md"
     },
     {
+      "source": "docs/native-windows-codex.md",
+      "target": "docs/verification/runtime-backends.md"
+    },
+    {
       "source": "docs/trace-context.md",
       "target": "docs/verification/trace-context.md"
     }
@@ -366,6 +370,10 @@
     },
     {
       "path": "docs/herdr-backend.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/native-windows-codex.md",
       "audience": "operator-current"
     },
     {

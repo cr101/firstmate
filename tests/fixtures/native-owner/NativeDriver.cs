@@ -81,6 +81,32 @@ public static partial class NativeOwner {
         if(Environment.GetEnvironmentVariable("FM_PROBE_EXERCISE")=="1") RunFirstmate("primary",true);
         return bash.ExitCode;
     }
+    static int EnvironmentTests() {
+        string directory=Path.Combine(Path.GetTempPath(),"fm-native-environment-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string payload=Path.Combine(directory,"payload.js"),main=Path.Combine(directory,"main.js"),injected=Path.Combine(directory,"injected"),result=Path.Combine(directory,"result.json");
+        File.WriteAllText(payload,"require('fs').writeFileSync("+Json.Serialize(injected.Replace('\\','/'))+",'injected')");
+        File.WriteAllText(main,"const fs=require('fs');const denied=['NODE_OPTIONS','NODE_PATH','BASH_ENV','ENV','CLAUDE_PID','CLAUDECODE'];const leaked=Object.keys(process.env).filter(k=>denied.includes(k.toUpperCase())||k.toUpperCase().startsWith('FM_')||k.toUpperCase().startsWith('PI_')||k.toUpperCase().startsWith('NO_MISTAKES'));fs.writeFileSync("+Json.Serialize(result.Replace('\\','/'))+",JSON.stringify(leaked));");
+        var poison=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase){{"node_options","--require=\""+payload.Replace('\\','/')+"\""},{"node_path",directory},{"bash_env",payload},{"env",payload},{"claude_pid","123"},{"claudecode","1"},{"fm_poison","1"},{"pi_poison","1"},{"no_mistakes_poison","1"}};
+        var original=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        try {
+            foreach(var entry in poison){original[entry.Key]=Environment.GetEnvironmentVariable(entry.Key);Environment.SetEnvironmentVariable(entry.Key,entry.Value);}
+            var values=EnvironmentFor("pipe","session",directory,"nonce");
+            var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe"),Quote(main)){UseShellExecute=false};
+            info.EnvironmentVariables.Clear();foreach(var entry in values)info.EnvironmentVariables[entry.Key]=entry.Value;
+            using(var process=Process.Start(info)){
+                if(!process.WaitForExit(10000))throw new TimeoutException("Environment test child exceeded its bound");
+                if(process.ExitCode!=0)throw new InvalidOperationException("Environment test child failed");
+            }
+            var leaked=Json.Deserialize<string[]>(File.ReadAllText(result));
+            if(File.Exists(injected)||leaked.Length!=5)throw new InvalidOperationException("Denied inherited environment reached the native host");
+            foreach(string key in leaked)if(!key.StartsWith("FM_PROBE_",StringComparison.Ordinal))throw new InvalidOperationException("Unexpected inherited environment reached the native host");
+            Console.WriteLine("PASS: inherited Windows environment denylist is case-insensitive");
+            return 0;
+        } finally {
+            foreach(var entry in original)Environment.SetEnvironmentVariable(entry.Key,entry.Value);
+        }
+    }
     static int Run(string configPath) {
         var config = Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(configPath));
         string home = Path.GetFullPath((string)config["home"]);
@@ -120,7 +146,7 @@ public static partial class NativeOwner {
                 if(!values.ContainsKey("FM_PROBE_API_DRY") || (fault!="partial" && fault!="complete")) throw new ArgumentException("Fault injection is limited to the model-free fixture");
                 values["FM_PROBE_ACK_FAULT"]=fault;
             }
-            if(lease!=null) { values["FM_PROBE_LEASE_HOME"]=lease.Home; values["FM_PROBE_LEASE_GENERATION"]=session; values["FM_HOME"]=lease.Home.Replace('\\','/'); }
+            if(lease!=null) values["FM_HOME"]=lease.Home.Replace('\\','/');
             if(config.ContainsKey("ownerExercise") && (bool)config["ownerExercise"]) values["FM_PROBE_EXERCISE"]="1";
             if(config.ContainsKey("boundaries") && (bool)config["boundaries"]) values["FM_PROBE_BOUNDARIES"]="1";
             var block = new StringBuilder(); foreach (var e in values) block.Append(e.Key).Append('=').Append(e.Value).Append('\0'); block.Append('\0');
@@ -231,8 +257,10 @@ public static partial class NativeOwner {
     }
     public static int Main(string[] args) {
         try {
+            int ownerResult;
             if(args.Length==1 && args[0]=="receipt-tests") { ReceiptTests.Run();return TestOperationLifetime(); }
-            if(args.Length>=3 && args[0]=="owner") return OwnerClient(args[1],args[2],args.Length>3 ? args[3] : "");
+            if(args.Length==1 && args[0]=="environment-tests") return EnvironmentTests();
+            if(TryOwnerCommand(args,out ownerResult)) return ownerResult;
             if(args.Length>0 && args[0]=="client") return Client(args.Length>1 ? args[1] : "agent-tool");
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }
             if(args.Length==3 && args[0]=="lease-check") { Console.WriteLine(NativeHomeLease.Check(args[1],args[2])); return 0; }

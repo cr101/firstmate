@@ -15,7 +15,6 @@ public sealed class NativeHomeLease : IDisposable {
     FileStream file;
     public readonly string Home;
     internal bool IsHeld { get { return file!=null; } }
-    public string PreviousGeneration { get; private set; }
     readonly HashSet<string> deadGenerations=new HashSet<string>();
     static bool Generation(string value) {
         if(value==null||value.Length!=32)return false;
@@ -77,14 +76,14 @@ public sealed class NativeHomeLease : IDisposable {
             if(file.Length>0) {
                 var previous=Read(file);
                 if(RootAlive(previous)) throw new InvalidOperationException("Recorded primary is still alive; refusing replacement");
-                PreviousGeneration=previous.ContainsKey("generation") ? (string)previous["generation"] : null;
-                if(!Generation(PreviousGeneration))throw new InvalidOperationException("Invalid predecessor generation; preserved");
+                string previousGeneration=previous.ContainsKey("generation") ? (string)previous["generation"] : null;
+                if(!Generation(previousGeneration))throw new InvalidOperationException("Invalid predecessor generation; preserved");
                 if(previous.ContainsKey("deadGenerations")) {
                     var prior=previous["deadGenerations"] as System.Collections.IList;
                     if(prior==null)throw new InvalidOperationException("Invalid predecessor history; preserved");
                     foreach(object item in prior){string value=item as string;if(!Generation(value))throw new InvalidOperationException("Invalid predecessor history; preserved");deadGenerations.Add(value);}
                 }
-                deadGenerations.Add(PreviousGeneration);
+                deadGenerations.Add(previousGeneration);
                 if(deadGenerations.Count>256)throw new InvalidOperationException("Predecessor history requires maintenance; preserved");
             }
             Write(new Dictionary<string,object>{{"state","pending"},{"controllerPid",Process.GetCurrentProcess().Id}});

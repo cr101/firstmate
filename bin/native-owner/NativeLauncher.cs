@@ -32,7 +32,7 @@ public static partial class NativeOwner {
         ConsoleCancelEventHandler cancel=(sender,args)=>{args.Cancel=true;};Console.CancelKeyPress+=cancel;
         try {
             lease=new NativeHomeLease(home);operationJournal=new NativeReceiptJournal(lease,session);
-            int recovered=operationJournal.ReconcileCompletedAcknowledgements();
+            operationJournal.ReconcileCompletedAcknowledgements();
             string runtime=Path.Combine(home,"state","native-runtime",session);Directory.CreateDirectory(runtime);
             var security=new PipeSecurity();security.SetAccessRuleProtection(true,false);
             security.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User,PipeAccessRights.FullControl,AccessControlType.Allow));
@@ -43,8 +43,6 @@ public static partial class NativeOwner {
             controlServer=new NamedPipeServerStream(controlName,PipeDirection.InOut,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous,4096,4096,security);
             var values=EnvironmentFor(controlName,session,runtime,nonce);
             values["FM_HOME"]=home;values["FM_PROBE_CODE_ROOT"]=CodeRoot;
-            values["FM_PROBE_LEASE_HOME"]=home;values["FM_PROBE_LEASE_GENERATION"]=session;
-            values["FM_PROBE_RECOVERED"]=recovered.ToString();
             values["FM_PROBE_JQ_IMAGE"]=Environment.GetEnvironmentVariable("FM_NATIVE_JQ_IMAGE")??"";
             values["FM_PROBE_VERIFY_ONLY"]=Environment.GetEnvironmentVariable("FM_NATIVE_VERIFY_ONLY")??"";
             values["MSYS"]="winsymlinks:nativestrict";
@@ -139,11 +137,12 @@ public static partial class NativeOwner {
     }
     public static int Main(string[] args) {
         try {
+            int ownerResult;
             if(args.Length==3&&args[0]=="launch"&&args[1]=="--experimental")return Launch(args[2]);
-            if(args.Length>=3&&args[0]=="owner")return OwnerClient(args[1],args[2],args.Length>3?args[3]:"");
+            if(TryOwnerCommand(args,out ownerResult))return ownerResult;
             if(args.Length==1&&args[0]=="owner-operation")return FixedOperation("startup");
             if(args.Length==2&&args[0]=="notification-operation")return FixedOperation(args[1]);
-            throw new ArgumentException("Use fm-native-codex.ps1 -Experimental -Home <temporary empty-fleet home>");
+            throw new ArgumentException("Use fm-native-codex.ps1 -Experimental -OperationalHome <temporary empty-fleet home>");
         } catch(Exception error){Console.Error.WriteLine(error.Message);return 2;}
     }
 }

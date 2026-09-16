@@ -20,16 +20,16 @@ Compile the local provider and source stamp without launching a session.
 .PARAMETER VerifyOnly
 Connect startup and app-server without starting any model turns.
 .PARAMETER OperationalHome
-The Windows path to the temporary operational home; Home is an alias.
+The Windows path to the temporary operational home.
 .PARAMETER JqImage
 An existing local Docker image containing jq and GNU timeout. No image is pulled.
 Read-only helper containers self-expire even if their native client is stopped.
 .NOTES
 Use /interrupt to interrupt the current model turn and /quit to end the session.
 Interrupted acknowledgements remain pending for evidence-based reconciliation.
-See docs/verification/runtime-backends.md for the tested boundary and guards.
+See docs/native-windows-codex.md for setup and supported limits.
 #>
-param([switch]$Experimental,[switch]$BuildOnly,[switch]$VerifyOnly,[Alias("Home")][string]$OperationalHome,[string]$JqImage)
+param([switch]$Experimental,[switch]$BuildOnly,[switch]$VerifyOnly,[string]$OperationalHome,[string]$JqImage)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $names=@('NativeOwner','NativeHomeLease','NativeReceiptJournal','NativeAcknowledgementEvidence','NativeOperationLifetime','NativeOperations','NativeLauncher')
@@ -48,7 +48,7 @@ if ($BuildOnly) {
     exit 0
 }
 if (!$Experimental) { throw 'Explicit -Experimental opt-in is required; production use remains disabled.' }
-if (!$OperationalHome) { throw '-Home must name a temporary empty-fleet home.' }
+if (!$OperationalHome) { throw '-OperationalHome must name a temporary empty-fleet home.' }
 if (!$JqImage -or $JqImage -notmatch '^[A-Za-z0-9][A-Za-z0-9./:_@-]+$') { throw '-JqImage must name an existing local Docker image containing jq.' }
 if (!(Test-Path $binary) -or !(Test-Path $stamp) -or [IO.File]::ReadAllText($stamp) -ne $fingerprint) { throw 'Provider missing or out of date; run -BuildOnly after stopping native sessions.' }
 & docker image inspect $JqImage *> $null

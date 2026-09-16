@@ -2,6 +2,7 @@
 // Dynamic tool arguments never select a thread, executable, home, or command.
 import {createNotificationGate} from './codex-tool-gate.mjs';
 import {createHostLifecycle} from './host-lifecycle.mjs';
+import {discoverMcpServerNames,isolatedAppServerArgs,verifyExternalToolConfiguration,verifyExternalToolIsolation} from './app-server-policy.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -48,7 +49,8 @@ async function operation(action,extra={}) {
  }
  throw Error('Bounded operation exceeded 70 seconds');
 }
-const child=spawn(executable,['app-server','--stdio','--disable','hooks','-c','windows.sandbox=unelevated','-c','model_reasoning_effort=high'],{cwd:home,stdio:['pipe','pipe','pipe']});
+const mcpServerNames=await discoverMcpServerNames(executable,home);
+const child=spawn(executable,isolatedAppServerArgs(mcpServerNames,['-c','windows.sandbox=unelevated','-c','model_reasoning_effort=high']),{cwd:home,stdio:['pipe','pipe','pipe']});
 let alive=true,next=0,stderr='',primary=null,receipt=null,challenge=null,acknowledged=false;
 let gate=null,activeTurn=null,closing=false;
 const pending=new Map(),completed=new Map();
@@ -97,7 +99,9 @@ try {
  for(let i=0;i<1200;i++){const state=await native('result');if(state.startupExpired){ready=true;break;}await pause(100);}
  if(!ready||!fs.existsSync(path.join(home,'owner-operation.complete')))throw Error('Startup did not finish and expire');
  const params={cwd:home,model:'gpt-5.6-terra',sandbox:'read-only',approvalPolicy:'never',ephemeral:true,dynamicTools:tools};
+ const externalConfiguration=await verifyExternalToolConfiguration(request,mcpServerNames);
  primary=(await request('thread/start',params)).thread.id;evidence.primary=primary;
+ evidence.externalTools=await verifyExternalToolIsolation(request,primary,externalConfiguration);
  gate=createNotificationGate({primaryThread:primary,operate:operation,isAlive:()=>alive});
  evidence.foreign=(await request('thread/start',params)).thread.id;
  if(process.env.FM_PROBE_API_DRY==='1') {
