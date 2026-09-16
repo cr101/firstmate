@@ -10,16 +10,6 @@ cd "$ROOT"
 . bin/fm-session-lock-lib.sh
 fm_session_lock_owned_by_self "$FM_HOME/state"
 request="$LOG/notification-ack-request.json"
-seq=$(jq -r .seq "$request")
-generation=$(jq -r .generation "$request")
-case "$seq" in ''|*[!0-9]*) exit 2 ;; esac
-case "$generation" in ''|*[!A-Za-z0-9._-]*) exit 2 ;; esac
-notes=$(jq -r '.notes[]' "$request")
-if [ -n "$notes" ]; then
-  while IFS= read -r note; do
-    case "$note" in ''|*[!A-Za-z0-9_-]*) exit 2 ;; esac
-    bin/fm-inbox.sh drain --ack "$note"
-  done <<< "$notes"
-fi
-bin/fm-wake-drain.sh --ack-through "$seq" --recovery-generation "$generation"
+evidence=$(jq -er '.ownerEvidence | select(type == "string" and length > 0)' "$request")
+printf '%s' "$evidence" | bash bin/native-owner/ack-evidence.sh acknowledge-token
 printf '{"acknowledged":true}\n' > "$LOG/notification-ack.json"

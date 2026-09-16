@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {confirmAutomaticNotificationOffer,createNotificationGate} from '../../../bin/native-owner/codex-tool-gate.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {PassThrough} from 'node:stream';
+import {fileURLToPath} from 'node:url';
+import {createNotificationGate} from '../../../bin/native-owner/codex-tool-gate.mjs';
+import {runCodexHost} from '../../../bin/native-owner/codex-host-runtime.mjs';
+import {createFakeAppServer} from './fake-app-server.mjs';
 const message={receipt:'receipt',challenge:'observed',message:'Controlled message',checkpointExit:124};
 function fixture(operate) {
  const calls=[];let alive=true;
@@ -106,19 +113,65 @@ test('operation failure is not reported as success and cannot be blindly retried
   const {gate,calls}=fixture(()=>{throw Error('partial operation requires reconciliation');});
   assert.equal((await gate.handle(check())).success,false);assert.equal((await gate.handle(check({callId:'retry'}))).success,false);assert.equal(calls.length,1);
 });
-test('completed prose-only automatic turn preserves the unoffered receipt',()=>{
- const {gate}=fixture();gate.endTurn('primary','turn');
- assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt'),/durable work was preserved/);
+const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
+async function hostScenario(scenario){
+ const area=fs.mkdtempSync(path.join(os.tmpdir(),'fm-native-host-loop-'));
+ const runtime=path.join(area,'runtime'),home=path.join(area,'home');
+ fs.mkdirSync(runtime,{recursive:true});fs.mkdirSync(home,{recursive:true});
+ fs.writeFileSync(path.join(runtime,'digest.ready'),'ready\n');
+ fs.writeFileSync(path.join(runtime,'startup.log'),'deterministic startup digest\n');
+ fs.writeFileSync(path.join(runtime,'startup.finished'),'finished\n');
+ const input=new PassThrough(),output=new PassThrough(),error=new PassThrough();
+ const notification={receipt:'receipt',challenge:'observed',message:'Controlled message',checkpointExit:124};
+ let ackPending=false,acknowledgements=0,shutdowns=0,afterShutdown=0;
+ const native=async(action,extra)=>{
+  if(shutdowns&&action!=='shutdown')afterShutdown++;
+  if(action==='status')return {operationState:'ready'};
+  if(action==='result'){
+   if(ackPending){ackPending=false;return {operationState:'acknowledged'};}
+   return {operationState:'delivered',notification};
+  }
+  if(action==='ack'){
+   assert.deepEqual(extra,{receipt:'receipt',observed:'observed'});
+   acknowledgements++;ackPending=true;return {operationState:'pending'};
+  }
+  if(action==='shutdown'){shutdowns++;return {operationState:'stopped',reconciliationRequired:false};}
+  throw Error('unexpected native action '+action);
+ };
+ let result,failure;
+ try {
+  result=await runCodexHost({
+   env:{...process.env,FM_PROBE_HOME:runtime,FM_PROBE_CODE_ROOT:repo,FM_HOME:home,FM_PROBE_SESSION:'session',FM_PROBE_NONCE:'nonce'},
+   input,output,error,native,mcpServerNames:[],spawnAppServer:()=>createFakeAppServer(scenario),installSignalHandlers:false,
+   afterAutomaticTurn:()=>{
+    setTimeout(()=>input.write('/quit\n'),20);
+    return true;
+   },
+  });
+ }catch(errorValue){failure=errorValue;}
+ return {result,failure,acknowledgements,shutdowns,afterShutdown,host:JSON.parse(fs.readFileSync(path.join(runtime,'host.json'),'utf8'))};
+}
+
+for(const scenario of ['prose','denied','malformed'])test(`actual host loop preserves a ${scenario} completed turn`,async()=>{
+ const result=await hostScenario(scenario);
+ assert.match(result.failure?.message??'',/durable work was preserved/);
+ assert.equal(result.acknowledgements,0);
+ assert.equal(result.shutdowns,1);
+ assert.equal(result.afterShutdown,0);
+ assert.deepEqual(result.host.turns.map(turn=>turn.status),['completed']);
+ if(scenario==='prose')assert.equal(result.host.tools.length,0);
+ else assert.equal(result.host.tools[0].success,false);
 });
-for(const [name,request] of [
- ['denied',check({namespace:'other'})],
- ['malformed',check({arguments:null})],
-])test(`completed automatic turn with a ${name} check preserves the receipt`,async()=>{
- const {gate}=fixture();assert.equal((await gate.handle(request)).success,false);gate.endTurn('primary','turn');
- assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt'),/durable work was preserved/);
-});
-test('completed automatic turn suppresses only the exact successfully offered receipt',async()=>{
- const {gate}=fixture();assert.equal((await gate.handle(check())).success,true);gate.endTurn('primary','turn');
- assert.equal(confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt'),true);
- assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'other'));
+
+test('actual host loop suppresses only the exact successfully offered receipt',async()=>{
+ const result=await hostScenario('success');
+ assert.equal(result.failure,undefined);
+ assert.equal(result.acknowledgements,1);
+ assert.equal(result.shutdowns,1);
+ assert.equal(result.afterShutdown,0);
+ assert.deepEqual(result.result.automatic.map(item=>item.outcome),['offered']);
+ assert.deepEqual(result.host.turns.map(turn=>turn.status),['completed']);
+ assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
+  ['fm_notification_check',true],['fm_notification_ack',true],
+ ]);
 });

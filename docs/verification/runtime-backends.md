@@ -6,47 +6,6 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
-## Experimental native Windows ownership candidate
-
-This section retains refresh entry points only; no current-build output has been recorded by the verification owner.
-[`../native-windows-codex.md`](../native-windows-codex.md) owns current setup, safety boundaries, and supported limits for this isolated candidate.
-
-Refresh the portable request-policy regression with:
-
-```sh
-bash tests/fm-native-owner-tool-gate.test.sh
-```
-
-Refresh native receipt persistence and operation lifetime with:
-
-```sh
-bash tests/fm-native-owner-receipt-live-e2e.test.sh
-```
-
-Refresh effective app and MCP isolation without a model turn:
-
-```sh
-FM_LIVE_NATIVE_APP_POLICY=1 bash tests/fm-native-owner-app-server-policy-live-e2e.test.sh
-```
-
-Refresh the actual Windows integration with the explicit two-model-turn guard:
-
-```sh
-FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_CODEX=1 \
-  bash tests/fm-native-owner-codex-live-e2e.test.sh
-```
-
-### Explicit launcher integration
-
-Refresh the actual launcher without model turns, then optionally exercise two notification turns and active-turn cancellation:
-
-```sh
-FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 \
-  bash tests/fm-native-owner-launcher-live-e2e.test.sh
-FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE_NATIVE_CODEX=1 \
-  bash tests/fm-native-owner-launcher-live-e2e.test.sh
-```
-
 ## Harness detection precedence
 
 `bin/fm-harness.sh` owns native-owner, marker, and ancestry precedence; the evidence below covers marker and ancestry only, not the experimental native candidate.

@@ -32,7 +32,8 @@ const spec={home,leaseHome,executable:process.execPath,arguments:'"'+script+'"',
 if(startupQueued){spec.startupQueued=true;spec.startupNote=startupNote;}
 if(fault)spec.ackFault=fault;
 const file=path.join(home,'spec.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));
-const run=spawnSync(build.binary,['run',file],{encoding:'utf8',timeout:310000});
+const controllerEnv={...process.env,FM_PROBE_CODE_ROOT:repo};
+const run=spawnSync(build.binary,['run',file],{env:controllerEnv,encoding:'utf8',timeout:310000});
 fs.writeFileSync(path.join(home,'controller.stdout'),run.stdout||'');fs.writeFileSync(path.join(home,'controller.stderr'),run.stderr||'');
 fs.writeFileSync(path.join(dir,fault?`fault-${fault}-latest.json`:dry?'bridge-latest.json':'cycle-latest.json'),JSON.stringify({home,exit:run.status},null,2));
 console.log(JSON.stringify({home,exit:run.status,dry}));
@@ -57,7 +58,7 @@ if(fault) {
  const recovery=path.join(home,'recovery');fs.mkdirSync(recovery);
  const recoverySpec={home:recovery,leaseHome:spec.leaseHome,executable:build.binary,arguments:'sleep 100',timeoutSeconds:10,pipeAcl:'UserOnly'};
  const recoveryFile=path.join(recovery,'spec.json');fs.writeFileSync(recoveryFile,JSON.stringify(recoverySpec));
- const restarted=spawnSync(build.binary,['run',recoveryFile],{encoding:'utf8',timeout:15000});
+ const restarted=spawnSync(build.binary,['run',recoveryFile],{env:controllerEnv,encoding:'utf8',timeout:15000});
  fs.writeFileSync(path.join(recovery,'controller.stdout'),restarted.stdout||'');fs.writeFileSync(path.join(recovery,'controller.stderr'),restarted.stderr||'');
  if(restarted.status!==0)throw Error('Recovery controller failed');
  const recovered=read(path.join(recovery,'result.json'));

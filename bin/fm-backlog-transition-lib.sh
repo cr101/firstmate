@@ -72,6 +72,7 @@ FM_BACKLOG_ROW_HOLD_KIND=
 # retained_incomplete | answered | stale | noop.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_CLOSE_REPLAY_RESULT=
+FM_BACKLOG_EMPTY_ERROR=
 
 # Bounded execution is fm-timeout-lib.sh's alone; source it rather than
 # re-deriving a deadline here. It is stateless, so the memoisation reason this
@@ -147,6 +148,87 @@ fm_backlog_file() {  # <data-dir>
   else
     printf '%s/backlog.md\n' "$data"
   fi
+}
+
+fm_backlog_markdown_empty() {  # <backlog-file>
+  local file=$1
+  FM_BACKLOG_EMPTY_ERROR=
+  if [ ! -r "$file" ] || [ ! -f "$file" ] || [ -L "$file" ]; then
+    FM_BACKLOG_EMPTY_ERROR="backlog is not a readable regular file at $file"
+    return 1
+  fi
+  if ! LC_ALL=C awk '
+    {
+      sub(/\r$/, "")
+      if (length($0) != 0) lines[++count]=$0
+    }
+    END {
+      start=1
+      if (lines[1] == "# Backlog") start=2
+      if (count == 1 && start == 2) exit 0
+      if (count - start + 1 != 3) exit 1
+      if (lines[start] != "## In flight") exit 1
+      if (lines[start + 1] != "## Queued") exit 1
+      if (lines[start + 2] != "## Done") exit 1
+    }
+  ' "$file"; then
+    FM_BACKLOG_EMPTY_ERROR="backlog contains work or an unrecognized empty skeleton at $file"
+    return 1
+  fi
+}
+
+fm_backlog_empty_fleet_preflight() {  # <state-dir> <data-dir>
+  local state=$1 data=$2 record root backend file
+  FM_BACKLOG_EMPTY_ERROR=
+  if [ -e "$state" ] || [ -L "$state" ]; then
+    if ! fm_backlog_directory_present "$state" "state directory"; then
+      FM_BACKLOG_EMPTY_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+      return 1
+    fi
+    for record in "$state"/*.meta "$state"/*.status "$state"/*.backlog-close; do
+      if [ -e "$record" ] || [ -L "$record" ]; then
+        FM_BACKLOG_EMPTY_ERROR="work-bearing task record is present at $record"
+        return 1
+      fi
+    done
+  fi
+  if [ ! -e "$data" ] && [ ! -L "$data" ]; then
+    root=${data%/*}
+    [ -n "$root" ] || root=/
+    if [ -e "$root/.tasks.toml" ] || [ -L "$root/.tasks.toml" ]; then
+      FM_BACKLOG_EMPTY_ERROR="the experimental empty-fleet preflight cannot validate a configured backlog without its data directory"
+      return 1
+    fi
+    return 0
+  fi
+  if ! fm_backlog_directory_present "$data" "data directory"; then
+    FM_BACKLOG_EMPTY_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+    return 1
+  fi
+  root=$(fm_backlog_root "$data") || {
+    FM_BACKLOG_EMPTY_ERROR=${FM_BACKLOG_TRANSITION_ERROR:-"data directory cannot be resolved: $data"}
+    return 1
+  }
+  if ! fm_backlog_config_present "$root" "$(fm_backlog_authorized_root "$data")"; then
+    FM_BACKLOG_EMPTY_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+    return 1
+  fi
+  backend=$(fm_tasks_axi_backend "$root" 2>&1) || {
+    FM_BACKLOG_EMPTY_ERROR=$backend
+    return 1
+  }
+  if [ "$backend" != markdown ]; then
+    FM_BACKLOG_EMPTY_ERROR="the experimental empty-fleet preflight does not accept a non-markdown backlog backend"
+    return 1
+  fi
+  file=$(fm_backlog_file "$data") || {
+    FM_BACKLOG_EMPTY_ERROR=${FM_BACKLOG_TRANSITION_ERROR:-"backlog path cannot be resolved"}
+    return 1
+  }
+  if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+    return 0
+  fi
+  fm_backlog_markdown_empty "$file"
 }
 
 # The directory a backlog's own `.tasks.toml` is resolved from.

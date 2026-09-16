@@ -24,6 +24,8 @@ public static class ReceiptTests {
         Directory.CreateDirectory(Path.GetDirectoryName(Handled(lease)));
         File.WriteAllText(Pending(lease),"original captured inbox record\n");
         File.WriteAllText(Queue(lease),"1\t1\tcheck\tinbox:note-id\tcaptain inbox note\n");
+        File.WriteAllText(Path.Combine(lease.Home,"state",".main-eligible-rows"),"1\n");
+        File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:recovery\n");
     }
     static string Quote(string value) { return "\""+value.Replace("\"","\\\"")+"\""; }
     static string ZeroRecovery(NativeHomeLease lease,string action,string generation=null) {
@@ -181,6 +183,7 @@ public static class ReceiptTests {
                     payload["notes"]=new [] {"note-id","second"};payload["seq"]="2";
                     File.WriteAllText(Path.Combine(lease.Home,"state","inbox","second.note"),"second notification");
                     File.AppendAllText(Queue(lease),"2\t2\tcheck\tinbox:second\tsecond\n");
+                    File.WriteAllText(Path.Combine(lease.Home,"state",".main-eligible-rows"),"1\n2\n");
                 }
                 using(var journal=new NativeReceiptJournal(lease,A)) {
                     var delivery=journal.Present(payload);

@@ -2,7 +2,6 @@
 
 This explicit opt-in launcher is a restricted experimental candidate, not an installed runtime backend or a production-ready integration.
 Ordinary startup never selects it, and it does not install hooks, alter saved or global Codex settings, pull images, or select a default backend.
-[`verification/runtime-backends.md`](verification/runtime-backends.md#experimental-native-windows-ownership-candidate) provides the verification refresh entry points; no current-build output is recorded there yet.
 
 ## Setup
 
@@ -21,6 +20,42 @@ Build without launching, then verify an empty temporary operational home:
 Omit `-VerifyOnly` for an interactive model session.
 Rebuild the native provider after its source stamp changes and after all native sessions have stopped.
 Use `/interrupt` to interrupt the current model turn and `/quit` to end the session.
+
+## Verification entry points
+
+Run the portable request-policy regression with:
+
+```sh
+bash tests/fm-native-owner-tool-gate.test.sh
+```
+
+Run native receipt persistence and operation-lifetime checks with:
+
+```sh
+bash tests/fm-native-owner-receipt-live-e2e.test.sh
+```
+
+Run effective app and MCP isolation without a model turn with:
+
+```sh
+FM_LIVE_NATIVE_APP_POLICY=1 bash tests/fm-native-owner-app-server-policy-live-e2e.test.sh
+```
+
+Run the actual Windows integration with the explicit two-model-turn guard with:
+
+```sh
+FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_CODEX=1 \
+  bash tests/fm-native-owner-codex-live-e2e.test.sh
+```
+
+Run the explicit launcher without model turns, then optionally exercise two notification turns and active-turn cancellation with:
+
+```sh
+FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 \
+  bash tests/fm-native-owner-launcher-live-e2e.test.sh
+FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE_NATIVE_CODEX=1 \
+  bash tests/fm-native-owner-launcher-live-e2e.test.sh
+```
 
 ## Safety boundary and limits
 

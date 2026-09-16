@@ -89,8 +89,8 @@ public sealed class NativeReceiptJournal : IDisposable {
         if(receipt==null || !receipts.TryGetValue(receipt,out row) || (string)row["generation"]!=generation || (string)row["event"]!="ack-started") throw new InvalidOperationException("No matching acknowledgement attempt");
         Append("acknowledged",receipt,Copy((Dictionary<string,object>)row["payload"]),Evidence(row));
     }
-    static Dictionary<string,object> Evidence(Dictionary<string,object> row) {
-        object value;return row.TryGetValue("targetEvidence",out value) ? value as Dictionary<string,object> : null;
+    static object Evidence(Dictionary<string,object> row) {
+        object value;return row.TryGetValue("targetEvidence",out value) ? value : null;
     }
     public int ReconcileCompletedAcknowledgements() {
         EnsureOpen();
@@ -105,7 +105,7 @@ public sealed class NativeReceiptJournal : IDisposable {
         }
         return completed;
     }
-    void Append(string kind,string receipt,Dictionary<string,object> payload,Dictionary<string,object> evidence=null,string ackGeneration=null) {
+    void Append(string kind,string receipt,Dictionary<string,object> payload,object evidence=null,string ackGeneration=null) {
         var row=new Dictionary<string,object>{{"version",1},{"home",home},{"generation",generation},{"event",kind},{"receipt",receipt},{"payload",payload},{"targetEvidence",evidence},{"ackGeneration",ackGeneration}};
         byte[] bytes=new UTF8Encoding(false,true).GetBytes(json.Serialize(row)+"\n");
         if(bytes.Length>65536 || file.Length+bytes.Length>Limit) throw new IOException("Receipt journal capacity exceeded; durable work preserved");

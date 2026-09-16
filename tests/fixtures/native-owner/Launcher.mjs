@@ -63,10 +63,22 @@ const again=start(home);const restarted=await ready(again,initial.owner.generati
 assert.equal(fs.readFileSync(path.join(home,'state/.lock'),'utf8').trim(),'native:'+restarted.owner.generation);
 again.child.stdin.end();assert.equal((await bound(again.done,again,20000)).exit,0);
 records.push('restart after an intervening failed startup retains proven-dead ownership history');
+const titled=path.join(area,'titled-empty');fs.mkdirSync(path.join(titled,'data'),{recursive:true});
+fs.writeFileSync(path.join(titled,'data/backlog.md'),'# Backlog\r\n');
+const titledSession=start(titled);await ready(titledSession);titledSession.child.stdin.end();
+assert.equal((await bound(titledSession.done,titledSession,20000)).exit,0);
+records.push('owner-provided backlog admission accepts the canonical CRLF title-only skeleton');
 const populated=path.join(area,'populated');fs.mkdirSync(path.join(populated,'state'),{recursive:true});fs.writeFileSync(path.join(populated,'state/work.meta'),'preserve');
 const blocked=start(populated);blocked.child.stdin.end();assert.notEqual((await bound(blocked.done,blocked,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(populated,'state/work.meta'),'utf8'),'preserve');assert.equal(fs.existsSync(path.join(populated,'owner-probe.json')),false);
 records.push('populated home refused without changing its records');
+for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrupted-close','state/orphan.backlog-close']]){
+ const residualHome=path.join(area,name),record=path.join(residualHome,relative),contents='preserve residual task state';
+ fs.mkdirSync(path.dirname(record),{recursive:true});fs.writeFileSync(record,contents);
+ const refusedResidual=start(residualHome);refusedResidual.child.stdin.end();assert.notEqual((await bound(refusedResidual.done,refusedResidual,20000)).exit,0);
+ assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(residualHome,'owner-probe.json')),false);
+}
+records.push('orphan status and interrupted-close records refused before lease acquisition and preserved');
 for(const [name,contents] of [
  ['queued-backlog','## In flight\n\n## Queued\n- [ ] queued-work - preserved project work (repo: firstmate) (kind: ship)\n\n## Done\n'],
  ['unrecognized-backlog','# Backlog\n\nproject work in an unrecognized form\n'],
