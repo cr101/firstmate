@@ -14,7 +14,7 @@ function requestBoundary(responses) {
 }
 
 function inactiveMcpServer(name) {
- return {name,runtimeStatus:null,pluginId:null,serverInfo:null,tools:{},toolsError:null,resources:[],resourceTemplates:[],authStatus:'unknown'};
+ return {name,runtimeStatus:null,pluginId:null,serverInfo:null,serverCapabilities:null,tools:{},toolsError:null,resources:[],resourceTemplates:[],authStatus:'unknown'};
 }
 
 const isolatedConfiguration={appsFeatureEnabled:false,pluginsFeatureEnabled:false,configuredMcpServers:['alpha'],enabledMcpServers:[]};
@@ -74,6 +74,16 @@ test('a prohibited MCP capability on a later page is rejected',async()=>{
  const {request,calls}=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':({cursor})=>pages.get(cursor)});
  await assert.rejects(verifyExternalToolIsolation(request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
  assert.equal(calls.filter(call=>call.method==='mcpServerStatus/list').length,2);
+});
+
+test('server capabilities are required and only null is inactive',async()=>{
+ const valid=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[inactiveMcpServer('alpha')],nextCursor:null}});
+ assert.deepEqual((await verifyExternalToolIsolation(valid.request,'thread-1',isolatedConfiguration)).activeMcpServers,[]);
+ const missing=inactiveMcpServer('missing');delete missing.serverCapabilities;
+ const absent=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[missing],nextCursor:null}});
+ await assert.rejects(verifyExternalToolIsolation(absent.request,'thread-1',isolatedConfiguration),/Invalid MCP server status response/);
+ const exposed=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{...inactiveMcpServer('active'),serverCapabilities:{tools:{}}}],nextCursor:null}});
+ await assert.rejects(verifyExternalToolIsolation(exposed.request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
 });
 
 test('valid empty and multi-page catalogs are accepted',async()=>{

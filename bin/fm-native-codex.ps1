@@ -18,10 +18,6 @@ The Windows path to the temporary operational home.
 .PARAMETER JqImage
 An existing local Docker image containing jq and GNU timeout. No image is pulled.
 Read-only helper containers self-expire even if their native client is stopped.
-.NOTES
-Use /interrupt to interrupt the current model turn and /quit to end the session.
-Interrupted acknowledgements remain pending for evidence-based reconciliation.
-See docs/native-windows-codex.md for setup and supported limits.
 #>
 param([switch]$Experimental,[switch]$BuildOnly,[switch]$VerifyOnly,[string]$OperationalHome,[string]$JqImage)
 $ErrorActionPreference='Stop'

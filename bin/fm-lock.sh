@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Acquire or inspect the per-home firstmate session lock.
-# Writes the harness (agent) process PID found by walking the shell's ancestry,
-# which lives as long as the firstmate session - unlike the transient subshell
-# PID of any one tool call, which is dead moments after it is written.
+# Writes the harness session identity, normally the process PID found by walking
+# the shell's ancestry and an opaque launch-bound identity for the native owner.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
 set -u
@@ -23,6 +22,20 @@ mkdir -p "$STATE" 2>/dev/null || {
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
+fm_lock_owner_label() {
+  case "$1" in
+    native:*) printf 'native owner identity %s' "$1" ;;
+    *) printf 'harness pid %s' "$1" ;;
+  esac
+}
+
+fm_lock_holder_label() {
+  case "$1" in
+    native:*) printf 'native owner identity %s' "$1" ;;
+    *) printf 'pid %s' "$1" ;;
+  esac
+}
+
 if [ "${1:-}" = "status" ]; then
   if [ ! -f "$LOCK" ]; then echo "lock: free"; exit 0; fi
   old=$(cat "$LOCK" 2>/dev/null) || {
@@ -30,11 +43,11 @@ if [ "${1:-}" = "status" ]; then
     exit 0
   }
   if fm_harness_pid_alive "$old"; then
-    echo "lock: held by live harness pid $old"
+    echo "lock: held by live $(fm_lock_owner_label "$old")"
   elif fm_harness_pid_excludes "$old"; then
     echo "lock: held by native owner with unconfirmed health $old"
   else
-    echo "lock: stale (pid $old dead or not a harness)"
+    echo "lock: stale ($(fm_lock_holder_label "$old") dead or not a harness)"
   fi
   exit 0
 fi
@@ -74,11 +87,11 @@ trap 'exit 1' HUP INT TERM
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
   if [ "$old" = "$me" ]; then
-    echo "lock acquired: harness pid $me"
+    echo "lock acquired: $(fm_lock_owner_label "$me")"
     exit 0
   fi
   if fm_harness_pid_excludes "$old"; then
-    echo "error: another firstmate session may hold the lock (pid $old); operate read-only until resolved" >&2
+    echo "error: another firstmate session may hold the lock ($(fm_lock_holder_label "$old")); operate read-only until resolved" >&2
     exit 1
   fi
 fi
@@ -103,7 +116,7 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
     exit 1
   }
   if [ "$old" != "$me" ] && fm_harness_pid_excludes "$old"; then
-    echo "error: another firstmate session may hold the lock (pid $old); operate read-only until resolved" >&2
+    echo "error: another firstmate session may hold the lock ($(fm_lock_holder_label "$old")); operate read-only until resolved" >&2
     exit 1
   fi
 fi
@@ -120,4 +133,4 @@ if [ ! -f "$LOCK" ] || [ -L "$LOCK" ] || [ "$written" != "$me" ]; then
   exit 1
 fi
 release_claim_lock
-echo "lock acquired: harness pid $me"
+echo "lock acquired: $(fm_lock_owner_label "$me")"

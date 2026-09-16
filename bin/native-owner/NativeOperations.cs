@@ -27,32 +27,29 @@ public static partial class NativeOwner {
         result["FM_PROBE_EXE"] = OwnExe;
         return result;
     }
-    static ChildScope StartScope(string role, IntPtr parentJob, IntPtr environment, string home, ref SI startup, string purpose="startup") {
-        var scope=new ChildScope { job=CreateJobObject(IntPtr.Zero,null), role=role, purpose=purpose };
+    static ChildScope StartOwnerOperation(IntPtr parentJob, IntPtr environment, string home, ref SI startup, string purpose="startup") {
+        if(purpose!="startup" && purpose!="check" && purpose!="ack") throw new ArgumentException("Unknown fixed operation");
+        var scope=new ChildScope { job=CreateJobObject(IntPtr.Zero,null), role="owner-operation", purpose=purpose };
         IntPtr operationEnvironment=IntPtr.Zero;
         if(scope.job==IntPtr.Zero) throw Error("CreateJobObject child scope");
         try {
-            if(role=="owner-operation") NativeOperationLifetime.Configure(scope.job);
-            string operation=role=="owner-operation" ? (purpose=="startup" ? "owner-operation" : "notification-operation "+purpose) : "scoped-client "+role;
-            if(role=="owner-operation") {
-                // Only fixed operations receive the grant; caller claims never select it.
-                var values=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
-                foreach(string key in new [] {"SystemRoot","WINDIR","TEMP","TMP","USERPROFILE","APPDATA","LOCALAPPDATA"}) {
-                    string value=Environment.GetEnvironmentVariable(key); if(value!=null) values[key]=value;
-                }
-                values["PATH"]=@"C:\Program Files\Git\usr\bin;C:\Windows\System32;C:\Windows;C:\Program Files\nodejs;C:\Program Files\GitHub CLI;"+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"npm");
-                // Copy only the controller's registration fields from the prepared block.
-                int offset=0;
-                while(Marshal.ReadInt16(environment,offset)!=0) {
-                    string entry=Marshal.PtrToStringUni(IntPtr.Add(environment,offset)); offset+=(entry.Length+1)*2;
-                    int split=entry.IndexOf('='); if(split<=0) continue;
-                    string key=entry.Substring(0,split);
-                    if(key.StartsWith("FM_PROBE_",StringComparison.Ordinal) || key=="FM_HOME" || key=="MSYS") values[key]=entry.Substring(split+1);
-                }
-                var block=new StringBuilder(); foreach(var value in values) block.Append(value.Key).Append('=').Append(value.Value).Append('\0'); block.Append('\0');
-                operationEnvironment=Marshal.StringToHGlobalUni(block.ToString());
+            NativeOperationLifetime.Configure(scope.job);
+            string operation=purpose=="startup" ? "owner-operation" : "notification-operation "+purpose;
+            var values=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+            foreach(string key in new [] {"SystemRoot","WINDIR","TEMP","TMP","USERPROFILE","APPDATA","LOCALAPPDATA"}) {
+                string value=Environment.GetEnvironmentVariable(key); if(value!=null) values[key]=value;
             }
-            if(!CreateProcess(OwnExe,new StringBuilder(Quote(OwnExe)+" "+operation),IntPtr.Zero,IntPtr.Zero,true,0x4|0x400|0x200,operationEnvironment==IntPtr.Zero ? environment : operationEnvironment,home,ref startup,out scope.process)) throw Error("CreateProcess child scope");
+            values["PATH"]=@"C:\Program Files\Git\usr\bin;C:\Windows\System32;C:\Windows;C:\Program Files\nodejs;C:\Program Files\GitHub CLI;"+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"npm");
+            int offset=0;
+            while(Marshal.ReadInt16(environment,offset)!=0) {
+                string entry=Marshal.PtrToStringUni(IntPtr.Add(environment,offset)); offset+=(entry.Length+1)*2;
+                int split=entry.IndexOf('='); if(split<=0) continue;
+                string key=entry.Substring(0,split);
+                if(key.StartsWith("FM_PROBE_",StringComparison.Ordinal) || key=="FM_HOME" || key=="MSYS") values[key]=entry.Substring(split+1);
+            }
+            var block=new StringBuilder(); foreach(var value in values) block.Append(value.Key).Append('=').Append(value.Value).Append('\0'); block.Append('\0');
+            operationEnvironment=Marshal.StringToHGlobalUni(block.ToString());
+            if(!CreateProcess(OwnExe,new StringBuilder(Quote(OwnExe)+" "+operation),IntPtr.Zero,IntPtr.Zero,true,0x4|0x400|0x200,operationEnvironment,home,ref startup,out scope.process)) throw Error("CreateProcess child scope");
             if(!AssignProcessToJobObject(parentJob,scope.process.process) || !AssignProcessToJobObject(scope.job,scope.process.process)) throw Error("Assign child scope");
             // The caller records this scope before resuming the process.
             return scope;
@@ -109,14 +106,15 @@ public static partial class NativeOwner {
         if(startupFailed) {verdict["operationState"]="startup-failed";return;}
         if(!ready || pendingOperation!=null) { verdict["operationState"]="busy"; return; }
         if(operationJournal.NeedsReconciliation) { verdict["operationState"]="reconciliation-required";return; }
-        if(action=="check" && (delivered==null || consumed)) checkStarts++;
-        else if(action=="ack" && delivered!=null && !consumed && request.ContainsKey("receipt") && (string)request["receipt"]==receipt && request.ContainsKey("observed") && (string)request["observed"]==(string)delivered["challenge"]) {
+        bool startCheck=action=="check" && (delivered==null || consumed);
+        bool startAcknowledgement=action=="ack" && delivered!=null && !consumed && request.ContainsKey("receipt") && (string)request["receipt"]==receipt && request.ContainsKey("observed") && (string)request["observed"]==(string)delivered["challenge"];
+        if(!startCheck && !startAcknowledgement) { verdict["operationState"]="denied"; return; }
+        if(startAcknowledgement) {
             var targetEvidence=NativeAcknowledgementEvidence.Capture(lease,delivered);
             var acknowledged=operationJournal.BeginAcknowledgement(receipt,(string)request["observed"],targetEvidence);
-            ackStarts++;
             File.WriteAllText(Path.Combine(home,"notification-ack-request.json"),Json.Serialize(acknowledged));
-        } else { verdict["operationState"]="denied"; return; }
-        pendingOperation=StartScope("owner-operation",job,environment,home,ref startup,action);
+        }
+        pendingOperation=StartOwnerOperation(job,environment,home,ref startup,action);
         scopes.Add(pendingOperation);
         if(ResumeThread(pendingOperation.process.thread)==0xffffffff) throw Error("Resume notification operation");
         verdict["operationState"]="pending";

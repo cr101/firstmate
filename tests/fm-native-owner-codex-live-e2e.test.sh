@@ -5,6 +5,7 @@ set -eu
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_live_gate opt-in FM_LIVE_NATIVE_CODEX node powershell.exe codex docker
+: "${FM_NATIVE_TEST_JQ_IMAGE:?Set FM_NATIVE_TEST_JQ_IMAGE to an existing local image with jq and GNU timeout}"
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ;;
   *) printf '%s\n' 'Native Codex ownership test requires Windows' >&2; exit 1 ;;

@@ -17,12 +17,8 @@ Refresh the portable request-policy regression with:
 bash tests/fm-native-owner-tool-gate.test.sh
 ```
 
-The 31 behavioral cases cover the request policy and bounded host shutdown, including synchronous revocation, single-flight shutdown, failed interruption, cancelled shutdown requests, retained-process termination, and unconfirmed-exit refusal.
-The native controller now persists receipt presentation, acknowledgement intent, and completion under its existing exclusive home lease.
-It flushes acknowledgement intent before invoking the mutation and preserves interrupted attempts for reconciliation rather than retrying them.
-The token-free Windows guard exercises 28 receipt cases, including complete-versus-partial recovery, preservation of newer work, missing or changed evidence, generation separation, file links, and lease revocation.
-Two native operation-lifetime cases verify bounded stop and last-handle-close termination while an independent process remains alive.
-The guard also retains the exclusive-owner, normal-exit, controller-loss, orphan-recovery, ambiguous-record, and child-scope tests:
+The portable policy command above and native receipt command below remain refresh entry points.
+No attributable terminal output was retained for their latest runs, so this record does not claim those results as current evidence:
 
 ```sh
 bash tests/fm-native-owner-receipt-live-e2e.test.sh
@@ -43,7 +39,8 @@ PASS: effective app and MCP catalogs are isolated {"appsFeatureEnabled":false,"p
 Refresh the actual Windows integration with the explicit two-model-turn guard:
 
 ```sh
-FM_LIVE_NATIVE_CODEX=1 bash tests/fm-native-owner-codex-live-e2e.test.sh
+FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_CODEX=1 \
+  bash tests/fm-native-owner-codex-live-e2e.test.sh
 ```
 
 Observed terminal results:
@@ -69,15 +66,6 @@ The receipt evidence also supports multiple inbox targets and general wake recor
 
 ### Explicit launcher integration
 
-The opt-in launcher now runs real startup, delivers its digest before deferred work finishes, and retains the deferred operation's authorization until completion or bounded cancellation.
-It starts an ephemeral read-only, network-disabled primary thread and verifies the returned app-server policy.
-Its interactive host accepts ordinary input, `/interrupt`, and `/quit` and initiates model handling when a new durable notification arrives.
-Only controller-selected startup, notification check, and acknowledgement scripts run with registered native operation authority.
-Docker jq mounts are read-only, networking and image pulls are disabled, and its read-only helper process has a separate container-side expiry.
-The launch-bound owner record preserves verified-dead predecessor generations across failed startup attempts so an intervening failed launch does not strand the previous session lock.
-That history is bounded and refuses further acquisition rather than silently forgetting evidence.
-An unresolved acknowledgement prevents more work and identifies the preserved journal for review; no partial attempt is retried or rolled back automatically.
-
 Refresh the actual launcher without model turns, then optionally exercise two notification turns and active-turn cancellation:
 
 ```sh
@@ -87,13 +75,7 @@ FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE
   bash tests/fm-native-owner-launcher-live-e2e.test.sh
 ```
 
-The actual launcher refused a competing launch without changing its record, restarted after an intervening startup failure, refused a populated home unchanged, and delivered startup before a deliberately delayed deferred worker completed.
-Non-temporary homes and pre-existing reparse-point ancestors were refused before creating a home.
-Its cancellation stopped the registered deferred operation while an independent process stayed alive.
-Two later inbox notifications each initiated a real model turn without another startup or a test-generated model prompt; each was observed and acknowledged through the fixed operations.
-A separate shutdown interrupted an active model turn, confirmed app-server exit, and preserved the pending notification.
-The production launcher also refused a real partially acknowledged journal from the fault-injection fixture and surfaced the reconciliation requirement without starting the model.
-Fixture delays and controlled notifications remain under `tests/fixtures/native-owner/`; the launcher contains no test message generator.
+No attributable terminal output was retained for the latest launcher runs, so this record does not claim their results as current evidence.
 
 ## Harness detection precedence
 

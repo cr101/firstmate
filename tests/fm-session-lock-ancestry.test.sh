@@ -641,12 +641,19 @@ SH
     *) fail "unknown native owner status was not distinguished: $out" ;;
   esac
   case "$out" in *'held by live harness'*) fail "unknown native owner status reported positive health" ;; esac
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_TEST_NATIVE_STATE=1 "$bindir/fm-lock.sh" status)
+  case "$out" in *"stale (native owner identity $identity dead or not a harness)"*) ;; *) fail "dead native owner status mislabeled its identity: $out" ;; esac
   set +e
   out=$(PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_TEST_NATIVE_STATE=2 "$bindir/fm-lock.sh" 2>&1)
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "unknown native owner did not exclude acquisition"
   [ "$(cat "$dir/state/.lock")" = "$identity" ] || fail "unknown native owner was overwritten during acquisition"
+  case "$out" in *"native owner identity $identity"*) ;; *) fail "native exclusion mislabeled its owner identity: $out" ;; esac
+  case "$out" in *"pid $identity"*) fail "native exclusion labeled an opaque identity as a pid: $out" ;; esac
+  printf '%s\n' 'native:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' > "$dir/state/.lock"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_TEST_NATIVE_STATE=0 "$bindir/fm-lock.sh")
+  case "$out" in *'lock acquired: native owner identity native:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'*) ;; *) fail "native acquisition mislabeled its owner identity: $out" ;; esac
   pass "native lock status distinguishes unknown health while acquisition remains excluded"
 }
 

@@ -56,7 +56,7 @@ public static partial class NativeOwner {
             output=FileHandle(Path.Combine(runtime,"operations.log"),0x40000000,2);input=FileHandle("NUL",0x80000000,3);
             var operationStartup=new SI {cb=Marshal.SizeOf(typeof(SI)),flags=0x100,input=input,output=output,error=output};
             if(!operationJournal.NeedsReconciliation) {
-                var operation=StartScope("owner-operation",job,env,runtime,ref operationStartup);scopes.Add(operation);
+                var operation=StartOwnerOperation(job,env,runtime,ref operationStartup);scopes.Add(operation);
                 if(ResumeThread(operation.process.thread)==0xffffffff)throw Error("Resume startup");
             }
             controlThread=new Thread(()=>{

@@ -107,6 +107,30 @@ public static partial class NativeOwner {
             foreach(var entry in original)Environment.SetEnvironmentVariable(entry.Key,entry.Value);
         }
     }
+    static ChildScope StartFixtureScope(string role,IntPtr parentJob,IntPtr environment,string home,ref SI startup) {
+        if(role!="worker" && role!="nested-primary") throw new ArgumentException("Unsupported fixture scope");
+        var scope=new ChildScope {job=CreateJobObject(IntPtr.Zero,null),role=role,purpose="fixture"};
+        if(scope.job==IntPtr.Zero) throw Error("Create fixture scope job");
+        try {
+            if(!CreateProcess(OwnExe,new StringBuilder(Quote(OwnExe)+" scoped-client "+role),IntPtr.Zero,IntPtr.Zero,true,0x4|0x400|0x200,environment,home,ref startup,out scope.process)) throw Error("Create fixture scope");
+            if(!AssignProcessToJobObject(parentJob,scope.process.process) || !AssignProcessToJobObject(scope.job,scope.process.process)) throw Error("Assign fixture scope");
+            return scope;
+        } catch {
+            if(scope.process.process!=IntPtr.Zero) {TerminateProcess(scope.process.process,125);CloseHandle(scope.process.thread);CloseHandle(scope.process.process);}
+            CloseHandle(scope.job);throw;
+        }
+    }
+    static int LeaseCheck(string home,string generation) {
+        bool current=false;
+        try {
+            var binding=NativeHomeLease.Binding(Path.Combine(home,"state"));
+            current=binding.ContainsKey("generation") && (string)binding["generation"]==generation;
+        } catch(InvalidOperationException error) {
+            if(error.Message!="Primary no longer live") throw;
+        }
+        Console.WriteLine(Json.Serialize(new Dictionary<string,object>{{"probeOwnerCurrent",current}}));
+        return 0;
+    }
     static int Run(string configPath) {
         var config = Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(configPath));
         string home = Path.GetFullPath((string)config["home"]);
@@ -139,6 +163,10 @@ public static partial class NativeOwner {
                 recoveredAcknowledgements=operationJournal.ReconcileCompletedAcknowledgements();
             }
             var values = EnvironmentFor(pipeName, session, home, nonce);
+            if(config.ContainsKey("ownerExercise") && (bool)config["ownerExercise"]) {
+                if(!config.ContainsKey("jqImage") || string.IsNullOrWhiteSpace((string)config["jqImage"])) throw new ArgumentException("Owner exercise requires an explicit local jq image");
+                values["FM_PROBE_JQ_IMAGE"]=(string)config["jqImage"];
+            }
             values["MSYS"]="winsymlinks:nativestrict";
             if(config.ContainsKey("apiDry") && (bool)config["apiDry"]) values["FM_PROBE_API_DRY"]="1";
             if(config.ContainsKey("ackFault")) {
@@ -164,12 +192,12 @@ public static partial class NativeOwner {
             if (!GetProcessTimes(child.process,out born,out exited,out kernel,out user)) throw Error("GetProcessTimes");
             if(lease!=null) lease.Publish(child.pid,((ulong)born.high<<32)|born.low,session,pipeName);
             if(config.ContainsKey("ownerOperation") && (bool)config["ownerOperation"]) {
-                var operation=StartScope("owner-operation",job,env,home,ref startup);
+                var operation=StartOwnerOperation(job,env,home,ref startup);
                 scopes.Add(operation);
                 if(ResumeThread(operation.process.thread)==0xffffffff) throw Error("Resume owner operation");
             }
             if(values.ContainsKey("FM_PROBE_BOUNDARIES")) {
-                foreach(string role in new [] {"worker","nested-primary"}) scopes.Add(StartScope(role,job,env,home,ref startup));
+                foreach(string role in new [] {"worker","nested-primary"}) scopes.Add(StartFixtureScope(role,job,env,home,ref startup));
                 foreach(var scope in scopes) if(ResumeThread(scope.process.thread)==0xffffffff) throw Error("Resume child scope");
             }
             if (ResumeThread(child.thread) == 0xffffffff) throw Error("ResumeThread");
@@ -229,7 +257,7 @@ public static partial class NativeOwner {
                 {"probeGeneration",session},{"probeLeaseHeld",lease!=null},
                 {"pipeDacl",security.GetSecurityDescriptorSddlForm(AccessControlSections.Access)},
                 {"recoveredAcknowledgements",recoveredAcknowledgements},{"receiptNeedsReconciliation",operationJournal!=null && operationJournal.NeedsReconciliation},
-                {"authorityImplemented",false},{"notificationCheckStarts",checkStarts},{"notificationAckStarts",ackStarts},{"notificationConsumed",consumed},{"observations",observations}
+                {"authorityImplemented",false},{"notificationConsumed",consumed},{"observations",observations}
             };
             if (outsider != null) {
                 if (!outsider.WaitForExit(10000)) throw new IOException("Outsider probe did not stop");
@@ -263,7 +291,7 @@ public static partial class NativeOwner {
             if(TryOwnerCommand(args,out ownerResult)) return ownerResult;
             if(args.Length>0 && args[0]=="client") return Client(args.Length>1 ? args[1] : "agent-tool");
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }
-            if(args.Length==3 && args[0]=="lease-check") { Console.WriteLine(NativeHomeLease.Check(args[1],args[2])); return 0; }
+            if(args.Length==3 && args[0]=="lease-check") return LeaseCheck(args[1],args[2]);
             if(args.Length==2 && args[0]=="notification-operation") {
                 if(args[1]!="check" && args[1]!="ack") throw new ArgumentException("Unsupported notification operation");
                 string script=Path.Combine(Path.GetDirectoryName(OwnExe),"firstmate","notification-"+args[1]+".sh");

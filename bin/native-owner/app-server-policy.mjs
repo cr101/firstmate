@@ -15,6 +15,7 @@ function validMcpServerStatus(value) {
   (value.runtimeStatus===null||['notStarted','starting','connected','authenticationRequired','failed','cancelled','disabled'].includes(value.runtimeStatus))&&
   (value.pluginId===null||typeof value.pluginId==='string')&&
   (value.serverInfo===null||isRecord(value.serverInfo))&&
+  (value.serverCapabilities===null||isRecord(value.serverCapabilities))&&
   isRecord(value.tools)&&(value.toolsError===null||typeof value.toolsError==='string')&&
   Array.isArray(value.resources)&&Array.isArray(value.resourceTemplates)&&
   ['unknown','unsupported','notLoggedIn','bearerToken','oAuth'].includes(value.authStatus);
@@ -91,7 +92,7 @@ export async function verifyExternalToolIsolation(request,threadId,configuration
  if(!isRecord(installed)||!Array.isArray(installed.apps)||installed.apps.some(app=>!validInstalledApp(app)))throw Error('Invalid installed app catalog response');
  const apps=installed.apps;
  const mcpServers=await readMcpServerStatuses(request);
- const activeMcpServers=mcpServers.filter(server=>server.runtimeStatus!==null||server.serverInfo!==null||server.toolsError!==null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
+ const activeMcpServers=mcpServers.filter(server=>server.runtimeStatus!==null||server.serverInfo!==null||server.serverCapabilities!==null||server.toolsError!==null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
  const result={
   ...configuration,
   exposedApps:apps.map(app=>app.id),

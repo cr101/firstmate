@@ -68,7 +68,6 @@ public static partial class NativeOwner {
     static Dictionary<string,object> delivered;
     static string receipt;
     static bool consumed;
-    static int checkStarts,ackStarts;
     static Dictionary<string,object> Verdict(Dictionary<string,object> request, uint pid, IntPtr root, IntPtr job, uint rootPid, List<ChildScope> scopes, string session, string home, string nonce) {
         string reason = "unverified", classification="none";
         if (WaitForSingleObject(root, 0) != WAIT_TIMEOUT) reason = "session-exited";

@@ -106,12 +106,5 @@ public sealed class NativeHomeLease : IDisposable {
             return record;
         }
     }
-    public static string Check(string home,string generation) {
-        using(var reader=new FileStream(Filename(home),FileMode.Open,FileAccess.Read,FileShare.ReadWrite)) {
-            var record=Read(reader);
-            bool same=record.ContainsKey("generation") && (string)record["generation"]==generation;
-            return Json.Serialize(new Dictionary<string,object>{{"probeOwnerCurrent",same && RootAlive(record)},{"generationMatches",same},{"authorityGranted",false}});
-        }
-    }
     public void Dispose() { if(file!=null) { file.Dispose(); file=null; } }
 }

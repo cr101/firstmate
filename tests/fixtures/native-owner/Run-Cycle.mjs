@@ -15,7 +15,7 @@ if(!dry){const preflight=read(path.join(dir,'bridge-preflight.json'));if(!prefli
 const home=path.join(build.root,'appserver-'+randomUUID());fs.mkdirSync(home);
 fs.writeFileSync(path.join(home,'build.json'),JSON.stringify(build,null,2));
 const script=path.join(build.root,'AppHost.mjs');
-const spec={home,leaseHome:path.join(home,'home'),executable:process.execPath,arguments:'"'+script+'"',registeredHarness:'codex-app-server',timeoutSeconds:280,ownerExercise:true,ownerOperation:true,pipeAcl:'UserOnly',apiDry:dry};
+const spec={home,leaseHome:path.join(home,'home'),executable:process.execPath,arguments:'"'+script+'"',registeredHarness:'codex-app-server',timeoutSeconds:280,ownerExercise:true,ownerOperation:true,pipeAcl:'UserOnly',apiDry:dry,jqImage:process.env.FM_NATIVE_TEST_JQ_IMAGE};
 if(fault)spec.ackFault=fault;
 const file=path.join(home,'spec.json');fs.writeFileSync(file,JSON.stringify(spec,null,2));
 const run=spawnSync(build.binary,['run',file],{encoding:'utf8',timeout:310000});
@@ -25,12 +25,14 @@ console.log(JSON.stringify({home,exit:run.status,dry}));
 if(run.status!==0)throw Error('Bounded app-server run failed; inspect evidence, do not start another model attempt');
 const host=read(path.join(home,'app-host-evidence.json')),native=read(path.join(home,'result.json'));
 if(!host.shutdown?.stopped||!host.shutdown.operationsStopped||!host.shutdown.exited)throw Error('Host shutdown was not confirmed');
-if(!host.passed||native.notificationCheckStarts!==1||native.notificationAckStarts!==1||native.notificationConsumed!==!fault)throw Error('Notification cycle incomplete');
+const starts=action=>host.native.filter(row=>row.action===action&&row.state==='pending').length;
+if(!host.passed||starts('check')!==1||starts('ack')!==1||native.notificationConsumed!==!fault)throw Error('Notification cycle incomplete');
 if(!host.native.filter(row=>row.action==='check'||row.action==='ack').every(row=>row.startupExpired))throw Error('Startup scope still active');
 if(fault) {
  const queue=path.join(spec.leaseHome,'state/.wake-queue'),before=fs.readFileSync(queue);
  const journal=()=>fs.readFileSync(path.join(spec.leaseHome,'owner-receipts.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
- if(journal().at(-1).event!=='ack-started'||!native.receiptNeedsReconciliation)throw Error('Interrupted intent was not preserved');
+ const historyBefore=journal();
+ if(historyBefore.at(-1).event!=='ack-started'||!native.receiptNeedsReconciliation)throw Error('Interrupted intent was not preserved');
  if((before.length===0)!==(fault==='complete'))throw Error('Fault did not land at the requested mutation boundary');
  const recovery=path.join(home,'recovery');fs.mkdirSync(recovery);
  const recoverySpec={home:recovery,leaseHome:spec.leaseHome,executable:build.binary,arguments:'sleep 100',timeoutSeconds:10,pipeAcl:'UserOnly'};
@@ -39,9 +41,10 @@ if(fault) {
  fs.writeFileSync(path.join(recovery,'controller.stdout'),restarted.stdout||'');fs.writeFileSync(path.join(recovery,'controller.stderr'),restarted.stderr||'');
  if(restarted.status!==0)throw Error('Recovery controller failed');
  const recovered=read(path.join(recovery,'result.json'));
- if(recovered.recoveredAcknowledgements!==(fault==='complete'?1:0)||recovered.receiptNeedsReconciliation!==(fault==='partial')||recovered.notificationAckStarts!==0)throw Error('Incorrect interrupted acknowledgement recovery');
+ if(recovered.recoveredAcknowledgements!==(fault==='complete'?1:0)||recovered.receiptNeedsReconciliation!==(fault==='partial'))throw Error('Incorrect interrupted acknowledgement recovery');
  if(!fs.readFileSync(queue).equals(before))throw Error('Recovery replayed a wake mutation');
  const history=journal();
+ if(history.length!==historyBefore.length+(fault==='complete'?1:0))throw Error('Recovery started or recorded an unexpected acknowledgement');
  if(fault==='complete'&&(history.at(-1).event!=='recovered-acknowledged'||history.at(-1).ackGeneration!==native.probeGeneration||history.at(-1).generation!==recovered.probeGeneration))throw Error('Recovery generations are not bound');
  console.log(`PASS: actual ${fault} acknowledgement interruption; recovery ${fault==='complete'?'confirmed completed effects without replay':'preserved the unresolved partial mutation'}.`);
  process.exit(0);
