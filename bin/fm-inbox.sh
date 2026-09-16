@@ -377,6 +377,58 @@ cmd_drain() {
   printf '\nAck with: fm-inbox.sh drain --ack <id>...\n'
 }
 
+native_admission_predicate() {
+  local queue=${1:-} source count=0 epoch seq kind key payload extra id note handled record
+  [ -n "$queue" ] || return 2
+  if [ ! -e "$queue" ] && [ ! -L "$queue" ]; then
+    source=/dev/null
+  else
+    source=$queue
+  fi
+  while IFS=$'\t' read -r epoch seq kind key payload extra || [ -n "$epoch$seq$kind$key$payload$extra" ]; do
+    case "$key" in inbox:*) ;; *) continue ;; esac
+    id=${key#inbox:}
+    case "$id" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+    [ "$kind" = check ] || return 1
+    case "$payload" in "check: captain inbox note $id - "?*) ;; *) return 1 ;; esac
+    note="$INBOX/$id.note"
+    handled="$INBOX/handled/$id.note"
+    if { [ ! -f "$note" ] || [ -L "$note" ]; } && { [ ! -f "$handled" ] || [ -L "$handled" ]; }; then
+      return 1
+    fi
+    if { [ -e "$note" ] || [ -L "$note" ]; } && { [ -e "$handled" ] || [ -L "$handled" ]; }; then
+      return 1
+    fi
+    count=$((count + 1))
+  done < "$source"
+  if [ -d "$INBOX" ] && [ ! -L "$INBOX" ]; then
+    for record in "$INBOX"/* "$INBOX"/.[!.]* "$INBOX"/..?*; do
+      [ -e "$record" ] || [ -L "$record" ] || continue
+      if [ "$record" = "$INBOX/handled" ]; then
+        [ -d "$record" ] && [ ! -L "$record" ] || return 1
+        continue
+      fi
+      case "$record" in "$INBOX"/*.note) ;; *) return 1 ;; esac
+      [ -f "$record" ] && [ ! -L "$record" ] || return 1
+      id=${record##*/}; id=${id%.note}
+      case "$id" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+      awk -F '\t' -v key="inbox:$id" '$3 == "check" && $4 == key { found=1 } END { exit !found }' "$source" || return 1
+    done
+    if [ -d "$INBOX/handled" ] && [ ! -L "$INBOX/handled" ]; then
+      for record in "$INBOX/handled"/* "$INBOX/handled"/.[!.]* "$INBOX/handled"/..?*; do
+        [ -e "$record" ] || [ -L "$record" ] || continue
+        case "$record" in "$INBOX/handled"/*.note) ;; *) return 1 ;; esac
+        [ -f "$record" ] && [ ! -L "$record" ] || return 1
+        id=${record##*/}; id=${id%.note}
+        case "$id" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+      done
+    fi
+  elif [ -e "$INBOX" ] || [ -L "$INBOX" ]; then
+    return 1
+  fi
+  printf '%s\n' "$count"
+}
+
 # ---------------------------------------------------------------- dispatch
 
 case "${1:-}" in
@@ -386,6 +438,7 @@ case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;
   list)   shift; cmd_list ;;
   drain)  shift; cmd_drain "$@" ;;
+  native-admission-predicate) shift; native_admission_predicate "$@" ;;
   ''|-h|--help|help)
     # The whole header block, found rather than counted: everything after the
     # shebang up to the first line that is not a comment. A fixed line range

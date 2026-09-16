@@ -14,7 +14,7 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function command(exe,args){const result=spawnSync(exe,args,{encoding:'utf8',timeout:120000});if(result.status!==0)throw Error(result.stderr||result.stdout);return result;}
 command('git',['-c','core.symlinks=true','clone','--quiet','--no-local','--single-branch',repo,code]);
 fs.cpSync(path.join(repo,'bin/native-owner'),path.join(code,'bin/native-owner'),{recursive:true});
-for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh','fm-backlog-transition-lib.sh','fm-supervision-lib.sh','fm-wake-lib.sh','fm-startup-network.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
+for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh','fm-backlog-transition-lib.sh','fm-supervision-lib.sh','fm-wake-lib.sh','fm-startup-network.sh','fm-inbox.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
 const launcher=path.join(code,'bin/fm-native-codex.ps1');
 command('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly']);
 const removedAlias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
@@ -45,6 +45,17 @@ function enqueue(home,message){
  Object.assign(env,{FM_HOME:posix(home),FM_PROBE_JQ_IMAGE:image,MSYS:'winsymlinks:nativestrict'});
  const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export PATH="$1/bin/native-owner/tools:/usr/bin:/bin:$PATH"; export FM_HOME; FM_HOME=$(cygpath -u "$3"); exec /usr/bin/bash "$1/bin/fm-inbox.sh" note "$2"','launcher-test',posix(code),message,home],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));return result.stdout.trim().split(/\s+/)[1];
+}
+function appendStartupWake(home,state){
+ const env={...process.env,FM_HOME:home,FM_ROOT_OVERRIDE:posix(code),FM_STATE_OVERRIDE:posix(path.join(home,'state')),MSYS:'winsymlinks:nativestrict'};
+ const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','. "$1/bin/fm-wake-lib.sh"; fm_wake_append_startup_network "$2"','startup-wake',posix(code),state],{env,encoding:'utf8',timeout:30000});
+ assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
+}
+function captureAcknowledgement(home){
+ const env={...process.env,FM_HOME:home,MSYS:'winsymlinks:nativestrict'};
+ const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(code,'bin/native-owner/ack-evidence.sh')),'capture-json'],{env,encoding:'utf8',timeout:30000});
+ assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
+ return JSON.parse(result.stdout);
 }
 const home=path.join(area,'home');fs.mkdirSync(path.join(home,'data'),{recursive:true});
 fs.writeFileSync(path.join(home,'data/backlog.md'),'## In flight\n\n## Queued\n\n## Done\n');
@@ -89,6 +100,30 @@ const queuedRestart=start(queuedHome);await ready(queuedRestart,queuedReady.owne
 assert.equal((await bound(queuedRestart.done,queuedRestart,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(queuedHome,'state/inbox',queuedNote+'.note'),'utf8'),queuedBody);
 records.push('producer-created inbox and native handling recovery remain admissible across restart');
+const historicalHome=path.join(area,'historical-startup-completion'),historicalState=path.join(historicalHome,'state'),historicalStatus=path.join(historicalState,'.startup-network.status');
+fs.mkdirSync(historicalState,{recursive:true});fs.writeFileSync(historicalStatus,'generation=historical\nstate=failed\n');appendStartupWake(historicalHome,'failed');
+const historicalRow=fs.readFileSync(path.join(historicalState,'.wake-queue'),'utf8');fs.writeFileSync(historicalStatus,'generation=newer\nstate=done\n');
+const historicalSession=start(historicalHome);await ready(historicalSession);historicalSession.child.stdin.end();assert.equal((await bound(historicalSession.done,historicalSession,20000)).exit,0);
+assert(fs.readFileSync(path.join(historicalState,'.wake-queue'),'utf8').includes(historicalRow.trim()));
+records.push('queued startup failure survives a newer startup status and remains admissible');
+const interruptedHome=path.join(area,'interrupted-ack-restart'),interruptedNote=enqueue(interruptedHome,'Preserve this interrupted acknowledgement for reconciliation.');
+const preparedSession=start(interruptedHome);const prepared=await ready(preparedSession);preparedSession.child.stdin.end();assert.equal((await bound(preparedSession.done,preparedSession,20000)).exit,0);
+const target=captureAcknowledgement(interruptedHome),receipt='c'.repeat(32),payload={...target,challenge:'interrupted-restart',message:'preserved partial acknowledgement'};
+const journal=path.join(interruptedHome,'owner-receipts.jsonl'),journalRows=[
+ {version:1,home:path.resolve(interruptedHome),generation:prepared.owner.generation,event:'presented',receipt,payload,targetEvidence:null,ackGeneration:null},
+ {version:1,home:path.resolve(interruptedHome),generation:prepared.owner.generation,event:'ack-started',receipt,payload,targetEvidence:target.ownerEvidence,ackGeneration:null},
+];
+fs.appendFileSync(journal,journalRows.map(row=>JSON.stringify(row)).join('\n')+'\n');
+const interruptedQueue=path.join(interruptedHome,'state/.wake-queue'),queueBeforeRestart=fs.readFileSync(interruptedQueue,'utf8'),pendingNote=path.join(interruptedHome,'state/inbox',interruptedNote+'.note'),handledNote=path.join(interruptedHome,'state/inbox/handled',interruptedNote+'.note');
+fs.mkdirSync(path.dirname(handledNote),{recursive:true});fs.renameSync(pendingNote,handledNote);const handledBody=fs.readFileSync(handledNote,'utf8');
+const interruptedMarker=path.join(interruptedHome,'state/.watcher-down'),markerBody=`acked:handling:${target.generation}\n`;fs.writeFileSync(interruptedMarker,markerBody);
+const interruptedRestart=start(interruptedHome);interruptedRestart.child.stdin.end();const reconciliation=await bound(interruptedRestart.done,interruptedRestart,20000);
+assert.notEqual(reconciliation.exit,0);assert(reconciliation.stderr.includes('earlier acknowledgement is incomplete'),reconciliation.stderr);
+const reconciledOwner=read(path.join(interruptedHome,'owner-probe.json'));assert.notEqual(reconciledOwner.generation,prepared.owner.generation);
+const reconciliationRuntime=path.join(interruptedHome,'state/native-runtime',reconciledOwner.generation);
+assert.equal(fs.existsSync(path.join(reconciliationRuntime,'startup.log')),false);assert.equal(fs.existsSync(path.join(reconciliationRuntime,'startup.finished')),false);
+assert.equal(fs.readFileSync(interruptedQueue,'utf8'),queueBeforeRestart);assert.equal(fs.readFileSync(interruptedMarker,'utf8'),markerBody);assert.equal(fs.readFileSync(handledNote,'utf8'),handledBody);
+records.push('partial acknowledgement reaches reconciliation unchanged without restarting startup');
 const maskedHome=path.join(area,'bash-env-mask'),maskedStatus=path.join(maskedHome,'state/orphan.status'),mask=path.join(area,'bash-env-exit.sh');
 fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maskedStatus,'preserve masked residual state');fs.writeFileSync(mask,'exit 0\n');
 const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);

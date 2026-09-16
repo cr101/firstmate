@@ -329,6 +329,28 @@ report_requires_wake() {  # <state>
     "$REPORT_FILE" 2>/dev/null
 }
 
+native_admission_predicate() {
+  local queue=${1:-} source count=0 epoch seq kind key payload extra state expected recognized
+  [ -n "$queue" ] || return 2
+  if [ ! -e "$queue" ] && [ ! -L "$queue" ]; then
+    source=/dev/null
+  else
+    source=$queue
+  fi
+  while IFS=$'\t' read -r epoch seq kind key payload extra || [ -n "$epoch$seq$kind$key$payload$extra" ]; do
+    [ "$key" = startup-network ] || continue
+    [ "$kind" = check ] || return 1
+    recognized=false
+    for state in done failed timeout; do
+      expected=$(fm_wake_startup_network_payload "$state") || return 1
+      [ "$payload" != "$expected" ] || recognized=true
+    done
+    [ "$recognized" = true ] || return 1
+    count=$((count + 1))
+  done < "$source"
+  printf '%s\n' "$count"
+}
+
 await_delivery() {  # <generation> <state>
   local generation=$1 state=$2 limit waited=0 claim_record claim_generation claim_pid claim_live
   limit=$(( $(delivery_budget) * 10 ))
@@ -653,6 +675,7 @@ case "$MODE" in
   harvest) cmd_harvest "${HARVEST_PID:-}" ;;
   report) print_state; print_timings ;;
   wait) cmd_wait "${1:-120}" || exit $? ;;
+  native-admission-predicate) native_admission_predicate "${1:-}" ;;
   -h|--help) usage ;;
   *)
     printf 'fm-startup-network: unknown mode: %s\n' "${MODE:-<none>}" >&2

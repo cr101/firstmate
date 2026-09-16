@@ -349,14 +349,12 @@ EOF
   status_tmp="$home/state/.startup-network.status.mismatch"
   sed 's/^state=done$/state=failed/' "$home/state/.startup-network.status" > "$status_tmp"
   mv "$status_tmp" "$home/state/.startup-network.status"
-  if (
+  (
     FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" . "$root/bin/fm-wake-lib.sh"
     fm_wake_native_empty_fleet_preflight "$home/state"
-  ); then
-    fail "native admission accepted a startup wake whose owner state did not match"
-  fi
+  ) || fail "native admission tied a queued startup completion to mutable latest-run status"
 
-  pass "fm-startup-network: actionable completion wakes stay producer-bound for native admission"
+  pass "fm-startup-network: producer-owned completion wakes survive later status publication"
 }
 
 test_deferred_invalid_secondmate_markers_queue_durable_findings() {

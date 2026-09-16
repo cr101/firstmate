@@ -13,11 +13,11 @@
 # unresolved and prevents acknowledgement or marker replacement from erasing
 # the current proof.
 #
-# NATIVE EMPTY-FLEET ADMISSION. fm_wake_native_empty_fleet_preflight accepts
-# only bounded producer rows for top-level inbox notes and deferred startup
-# completion, plus valid main-presentation and recovery evidence. It is
-# read-only, rejects branch grants and unknown or malformed rows, and reports
-# refusals in FM_WAKE_NATIVE_ADMISSION_ERROR.
+# NATIVE EMPTY-FLEET ADMISSION. fm_wake_native_empty_fleet_preflight validates
+# bounded queue, presentation, and recovery state, while the inbox and deferred
+# startup owners decide which of their rows are supported. It is read-only,
+# rejects branch grants and unknown or malformed rows, and reports refusals in
+# FM_WAKE_NATIVE_ADMISSION_ERROR.
 
 FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
@@ -2125,7 +2125,7 @@ fm_wake_grant_rows_valid() {  # <rows-file>
 FM_WAKE_NATIVE_ADMISSION_ERROR=
 fm_wake_native_empty_fleet_preflight() {  # <state-dir>
   local state=$1 queue marker seq_file main_rows history record size counter
-  local epoch seq kind key payload extra id note handled expected row_state status
+  local row_count inbox_count startup_count status
   FM_WAKE_NATIVE_ADMISSION_ERROR=
   queue="$state/.wake-queue"
   marker="$state/.watcher-down"
@@ -2170,10 +2170,10 @@ fm_wake_native_empty_fleet_preflight() {  # <state-dir>
     fi
     size=$(wc -c < "$queue" 2>/dev/null | tr -d '[:space:]') || size=
     case "$size" in ''|*[!0-9]*) size=8388609 ;; esac
-    if [ "$size" -gt 8388608 ] || ! LC_ALL=C awk -F '\t' '
+    if [ "$size" -gt 8388608 ] || ! LC_ALL=C awk -F '\t' -v ceiling="$counter" '
       NF != 5 || $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ || $2 == 0 || length($2) > 16 ||
         $3 !~ /^(signal|stale|check|heartbeat)$/ || length($4) == 0 || length($5) == 0 ||
-        seen[$2]++ || (previous && $2 <= previous) { bad=1 }
+        seen[$2]++ || (previous && $2 <= previous) || (ceiling != "" && $2 > ceiling) { bad=1 }
       { previous=$2; count++ }
       END { exit bad || count > 100000 }
     ' "$queue"; then
@@ -2185,137 +2185,36 @@ fm_wake_native_empty_fleet_preflight() {  # <state-dir>
     FM_WAKE_NATIVE_ADMISSION_ERROR="wake queue has no producer sequence state at $seq_file"
     return 1
   fi
-  if [ -s "$queue" ]; then
-    while IFS=$'\t' read -r epoch seq kind key payload extra || [ -n "$epoch$seq$kind$key$payload$extra" ]; do
-      [ -n "$epoch$seq$kind$key$payload$extra" ] || continue
-      [ "$seq" -le "$counter" ] || {
-        FM_WAKE_NATIVE_ADMISSION_ERROR="wake row $seq exceeds its producer sequence at $seq_file"
-        return 1
-      }
-      case "$key" in
-      inbox:*)
-        id=${key#inbox:}
-        case "$id" in ''|*[!A-Za-z0-9_-]*)
-          FM_WAKE_NATIVE_ADMISSION_ERROR="wake queue contains an invalid inbox identity"
-          return 1
-          ;;
-        esac
-        case "$payload" in "check: captain inbox note $id - "?*) ;; *)
-          FM_WAKE_NATIVE_ADMISSION_ERROR="wake queue contains an unrecognized inbox record"
-          return 1
-          ;;
-        esac
-        [ "$kind" = check ] || {
-          FM_WAKE_NATIVE_ADMISSION_ERROR="wake queue contains an unsupported inbox wake kind"
-          return 1
-        }
-        note="$state/inbox/$id.note"
-        handled="$state/inbox/handled/$id.note"
-        if { [ ! -f "$note" ] || [ -L "$note" ]; } && { [ ! -f "$handled" ] || [ -L "$handled" ]; }; then
-          FM_WAKE_NATIVE_ADMISSION_ERROR="inbox wake has no safe note record for $id"
-          return 1
-        fi
-        if { [ -e "$note" ] || [ -L "$note" ]; } && { [ -e "$handled" ] || [ -L "$handled" ]; }; then
-          FM_WAKE_NATIVE_ADMISSION_ERROR="inbox wake has ambiguous note records for $id"
-          return 1
-        fi
-        ;;
-      startup-network)
-        [ "$kind" = check ] || {
-          FM_WAKE_NATIVE_ADMISSION_ERROR="startup completion used an unsupported wake kind"
-          return 1
-        }
-        row_state=
-        for status in done failed timeout; do
-          expected=$(fm_wake_startup_network_payload "$status") || return 1
-          [ "$payload" != "$expected" ] || row_state=$status
-        done
-        if [ -z "$row_state" ] || [ ! -f "$state/.startup-network.status" ] \
-          || [ ! -r "$state/.startup-network.status" ] || [ -L "$state/.startup-network.status" ]; then
-          FM_WAKE_NATIVE_ADMISSION_ERROR="startup completion wake lacks recognized owner state"
-          return 1
-        fi
-        if ! awk -F= -v expected="$row_state" \
-          '$1 == "state" && $2 == expected { count++ } END { exit count != 1 }' \
-          "$state/.startup-network.status"; then
-          FM_WAKE_NATIVE_ADMISSION_ERROR="startup completion owner state is unrecognized"
-          return 1
-        fi
-        ;;
-      *)
-        FM_WAKE_NATIVE_ADMISSION_ERROR="unsupported work-bearing wake is queued at $queue"
-        return 1
-        ;;
-      esac
-    done < "$queue"
+  if [ -e "$queue" ]; then
+    row_count=$(awk 'END { print NR + 0 }' "$queue" 2>/dev/null) || row_count=
+  else
+    row_count=0
   fi
-  if [ -d "$state/inbox" ] && [ ! -L "$state/inbox" ]; then
-    for record in "$state/inbox"/* "$state/inbox"/.[!.]* "$state/inbox"/..?*; do
-      [ -e "$record" ] || [ -L "$record" ] || continue
-      if [ "$record" = "$state/inbox/handled" ]; then
-        [ -d "$record" ] && [ ! -L "$record" ] || {
-          FM_WAKE_NATIVE_ADMISSION_ERROR="inbox handled state is unsafe at $record"
-          return 1
-        }
-        continue
-      fi
-      case "$record" in "$state/inbox"/*.note) ;; *)
-        FM_WAKE_NATIVE_ADMISSION_ERROR="unrecognized inbox state is present at $record"
-        return 1
-        ;;
-      esac
-      [ -f "$record" ] && [ ! -L "$record" ] || {
-        FM_WAKE_NATIVE_ADMISSION_ERROR="inbox note is unsafe at $record"
-        return 1
-      }
-      id=${record##*/}
-      id=${id%.note}
-      case "$id" in ''|*[!A-Za-z0-9_-]*)
-        FM_WAKE_NATIVE_ADMISSION_ERROR="inbox note has an invalid identity at $record"
-        return 1
-        ;;
-      esac
-      if ! awk -F '\t' -v key="inbox:$id" '$3 == "check" && $4 == key { found=1 } END { exit !found }' "$queue"; then
-        FM_WAKE_NATIVE_ADMISSION_ERROR="pending inbox note has no owner wake for $id"
-        return 1
-      fi
-    done
-    if [ -d "$state/inbox/handled" ] && [ ! -L "$state/inbox/handled" ]; then
-      for record in "$state/inbox/handled"/* "$state/inbox/handled"/.[!.]* "$state/inbox/handled"/..?*; do
-        [ -e "$record" ] || [ -L "$record" ] || continue
-        case "$record" in "$state/inbox/handled"/*.note) ;; *)
-          FM_WAKE_NATIVE_ADMISSION_ERROR="unrecognized handled inbox state is present at $record"
-          return 1
-          ;;
-        esac
-        [ -f "$record" ] && [ ! -L "$record" ] || {
-          FM_WAKE_NATIVE_ADMISSION_ERROR="handled inbox note is unsafe at $record"
-          return 1
-        }
-        id=${record##*/}
-        id=${id%.note}
-        case "$id" in ''|*[!A-Za-z0-9_-]*)
-          FM_WAKE_NATIVE_ADMISSION_ERROR="handled inbox note has an invalid identity at $record"
-          return 1
-          ;;
-        esac
-      done
-    fi
-  elif [ -e "$state/inbox" ] || [ -L "$state/inbox" ]; then
-    FM_WAKE_NATIVE_ADMISSION_ERROR="inbox state is unsafe at $state/inbox"
+  inbox_count=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$state" \
+    "$FM_WAKE_LIB_DIR/fm-inbox.sh" native-admission-predicate "$queue" 2>/dev/null) || {
+    FM_WAKE_NATIVE_ADMISSION_ERROR="inbox owner refused native admission state"
+    return 1
+  }
+  startup_count=$(FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$state" \
+    "$FM_WAKE_LIB_DIR/fm-startup-network.sh" native-admission-predicate "$queue" 2>/dev/null) || {
+    FM_WAKE_NATIVE_ADMISSION_ERROR="startup owner refused native admission state"
+    return 1
+  }
+  case "$row_count:$inbox_count:$startup_count" in
+    *[!0-9:]*)
+      FM_WAKE_NATIVE_ADMISSION_ERROR="wake producer admission evidence is unrecognized"
+      return 1
+      ;;
+  esac
+  if [ -z "$row_count" ] || [ -z "$inbox_count" ] || [ -z "$startup_count" ] \
+    || [ "$row_count" -ne $((inbox_count + startup_count)) ]; then
+    FM_WAKE_NATIVE_ADMISSION_ERROR="unsupported work-bearing wake is queued at $queue"
     return 1
   fi
   if [ -e "$marker" ] || [ -L "$marker" ]; then
     if ! fm_recovery_marker_read "$marker"; then
       FM_WAKE_NATIVE_ADMISSION_ERROR="wake recovery state is unrecognized at $marker"
       return 1
-    fi
-    if [ -s "$queue" ]; then
-      case "$FM_RECOVERY_MARKER_TOKEN" in pending:*|announced:*) ;; *)
-        FM_WAKE_NATIVE_ADMISSION_ERROR="queued wakes lack a pending recovery generation"
-        return 1
-        ;;
-      esac
     fi
   elif [ -s "$queue" ]; then
     FM_WAKE_NATIVE_ADMISSION_ERROR="queued wakes have no recovery generation at $marker"
