@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Usage: FM_HOME=<home> FM_PROBE_HOME=<evidence-dir> FM_PROBE_JQ_IMAGE=<image> exercise.sh
+# Required environment: FM_HOME, FM_PROBE_HOME, FM_PROBE_JQ_IMAGE.
 # Real startup in an empty disposable home; no mocked startup/deferred owners.
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

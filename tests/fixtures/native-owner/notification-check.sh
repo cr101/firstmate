@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Usage: FM_HOME=<home> FM_PROBE_HOME=<evidence-dir> FM_PROBE_JQ_IMAGE=<image> notification-check.sh
+# Required environment: FM_HOME, FM_PROBE_HOME, FM_PROBE_JQ_IMAGE.
 # Fixed notification operation, created and scoped by the existing controller.
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

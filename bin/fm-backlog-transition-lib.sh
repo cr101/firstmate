@@ -185,7 +185,9 @@ fm_backlog_empty_fleet_preflight() {  # <state-dir> <data-dir>
       FM_BACKLOG_EMPTY_ERROR=$FM_BACKLOG_TRANSITION_ERROR
       return 1
     fi
-    for record in "$state"/*.meta "$state"/*.status "$state"/*.backlog-close; do
+    for record in "$state"/*.meta "$state"/*.status "$state"/*.backlog-close \
+      "$state"/*.inbox "$state"/.backlog-handoff-*.wake-pending \
+      "$state"/handoff/*.outbox.md; do
       if [ -e "$record" ] || [ -L "$record" ]; then
         FM_BACKLOG_EMPTY_ERROR="work-bearing task record is present at $record"
         return 1
@@ -205,6 +207,12 @@ fm_backlog_empty_fleet_preflight() {  # <state-dir> <data-dir>
     FM_BACKLOG_EMPTY_ERROR=$FM_BACKLOG_TRANSITION_ERROR
     return 1
   fi
+  for record in "$data"/handoff/*.outbox.md; do
+    if [ -e "$record" ] || [ -L "$record" ]; then
+      FM_BACKLOG_EMPTY_ERROR="work-bearing handoff record is present at $record"
+      return 1
+    fi
+  done
   root=$(fm_backlog_root "$data") || {
     FM_BACKLOG_EMPTY_ERROR=${FM_BACKLOG_TRANSITION_ERROR:-"data directory cannot be resolved: $data"}
     return 1

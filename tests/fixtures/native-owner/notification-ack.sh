@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Usage: FM_HOME=<home> FM_PROBE_HOME=<evidence-dir> FM_PROBE_JQ_IMAGE=<image> notification-ack.sh
+# Required environment: FM_HOME, FM_PROBE_HOME, FM_PROBE_JQ_IMAGE.
 # Only controller-validated receipt data is accepted; no command text is parsed.
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

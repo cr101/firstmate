@@ -115,6 +115,16 @@ public static partial class NativeOwner {
             refused=false;try{EmptyFleet(registered);}catch(InvalidOperationException){refused=true;}
             if(!refused||File.Exists(canary))throw new InvalidOperationException("Registered custom work passed admission or executed during inspection");
             Console.WriteLine("PASS: registered custom checks are refused without execution");
+            string handoff=Path.Combine(directory,"handoff"),outbox=Path.Combine(handoff,"data","handoff","agent.outbox.md"),outboxBody="# Backlog\n\n## Queued\n\n- [ ] routed-work\n";
+            Directory.CreateDirectory(Path.GetDirectoryName(outbox));File.WriteAllText(outbox,outboxBody);
+            refused=false;try{EmptyFleet(handoff);using(var lease=new NativeHomeLease(handoff)){} }catch(InvalidOperationException){refused=true;}
+            if(!refused||File.ReadAllText(outbox)!=outboxBody||File.Exists(Path.Combine(handoff,"owner-probe.json"))||Directory.Exists(Path.Combine(handoff,"state")))throw new InvalidOperationException("Pending handoff work passed admission or caused lease or route activity");
+            Console.WriteLine("PASS: pending handoff work is preserved without lease or route activity");
+            string steering=Path.Combine(directory,"steering"),steeringState=Path.Combine(steering,"state"),inbox=Path.Combine(steeringState,"agent.inbox"),message=Path.Combine(inbox,"001.msg"),messageBody="schema=fm-task-inbox.v1\n--\npreserve\n";
+            Directory.CreateDirectory(inbox);File.WriteAllText(message,messageBody);
+            refused=false;try{EmptyFleet(steering);using(var lease=new NativeHomeLease(steering)){} }catch(InvalidOperationException){refused=true;}
+            if(!refused||File.ReadAllText(message)!=messageBody||File.Exists(Path.Combine(steering,"owner-probe.json"))||File.Exists(Path.Combine(steeringState,".lock")))throw new InvalidOperationException("Orphan steering work passed admission or caused lease or route activity");
+            Console.WriteLine("PASS: orphan steering work is preserved without lease or route activity");
             return 0;
         } finally {
             foreach(var entry in original)Environment.SetEnvironmentVariable(entry.Key,entry.Value);
