@@ -18,7 +18,7 @@ assert.deepEqual(Object.keys(host.externalTools).sort(),['activeMcpServers','app
 assert.equal(host.externalTools.appsFeatureEnabled,false);assert.equal(host.externalTools.pluginsFeatureEnabled,false);
 assert.ok(Array.isArray(host.externalTools.configuredMcpServers));assert.deepEqual(host.externalTools.enabledMcpServers,[]);
 assert.deepEqual(host.externalTools.exposedApps,[]);assert.deepEqual(host.externalTools.activeMcpServers,[]);
-assert.deepEqual(host.shutdown,{stopped:true,operationsStopped:true,exited:true,forced:false,errors:[]});
+assert.deepEqual(host.shutdown,{stopped:true,operationsStopped:true,reconciliationRequired:false,exited:true,forced:false,errors:[]});
 assert.notEqual(host.primary,host.foreign);assert.equal(host.tools.length,4);
 const requests=host.frames.filter(frame=>frame.method==='item/tool/call');
 assert.equal(requests.length,4);

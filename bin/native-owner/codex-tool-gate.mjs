@@ -67,6 +67,9 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
       try {
         if (params.tool === 'fm_notification_check') {
           const result = await operate('check');
+          if (result?.operationState === 'starting') {
+            return valid(params) ? { success: false, value: { unavailable: 'startup-in-progress' } } : deny('wrong-thread-turn-or-replay');
+          }
           if (result?.operationState === 'quiet') {
             return valid(params) ? { success: true, value: { quiet: true } } : deny('wrong-thread-turn-or-replay');
           }

@@ -21,6 +21,12 @@ test('quiet checks create no receipt and permit a later delivery',async()=>{
  assert.equal((await gate.handle(check({callId:'later'}))).value.receipt,'receipt');
  assert.equal(calls.length,2);
 });
+test('startup in progress is explicit and a queued note remains deliverable',async()=>{
+ let count=0;const {gate,calls}=fixture(()=>++count===1?{operationState:'starting'}:{operationState:'delivered',notification:message});
+ assert.deepEqual(await gate.handle(check()),{success:false,value:{unavailable:'startup-in-progress'}});
+ const delivered=await gate.handle(check({callId:'after-startup'}));
+ assert.equal(delivered.success,true);assert.equal(delivered.value.receipt,'receipt');assert.equal(calls.length,2);
+});
 test('a cancelled quiet check cannot authorize another turn',async()=>{
  let finish;const {gate}=fixture(()=>new Promise(resolve=>{finish=resolve;}));
  const pending=gate.handle(check());gate.endTurn('primary','turn');finish({operationState:'quiet'});

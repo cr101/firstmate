@@ -52,9 +52,13 @@
 #   Ancestry - the nearest harness process in this process's parent chain. This
 #              is the structural fact about who actually owns the process tree,
 #              so it is what settles a disagreement.
-# detect_own is the single owner of how the two combine; harness_marker and
-# harness_ancestry only report evidence. Record each newly verified env marker
-# in harness_marker, and each newly verified command name in harness_ancestry.
+#   Native owner - a launch-bound identity published by the experimental Windows
+#              launcher and authenticated through its native owner endpoint.
+#              When selected by its home record, it precedes marker and ancestry.
+# detect_own is the single owner of how the three combine; harness_marker and
+# harness_ancestry only report their evidence. Record each newly verified env
+# marker in harness_marker, and each newly verified command name in
+# harness_ancestry.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

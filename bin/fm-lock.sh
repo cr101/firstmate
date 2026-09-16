@@ -36,6 +36,21 @@ fm_lock_holder_label() {
   esac
 }
 
+fm_lock_conflict_message() {
+  if fm_harness_pid_alive "$1"; then
+    case "$1" in
+      native:*) printf 'error: another live firstmate session holds the lock (native owner identity %s); operate read-only until resolved' "$1" ;;
+      *) printf 'error: another live firstmate session holds the lock (pid %s); operate read-only until resolved' "$1" ;;
+    esac
+    return 0
+  fi
+  if fm_harness_pid_excludes "$1"; then
+    printf 'error: another firstmate session may hold the lock (%s); operate read-only until resolved' "$(fm_lock_holder_label "$1")"
+    return 0
+  fi
+  return 1
+}
+
 if [ "${1:-}" = "status" ]; then
   if [ ! -f "$LOCK" ]; then echo "lock: free"; exit 0; fi
   old=$(cat "$LOCK" 2>/dev/null) || {
@@ -90,8 +105,8 @@ if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
     echo "lock acquired: $(fm_lock_owner_label "$me")"
     exit 0
   fi
-  if fm_harness_pid_excludes "$old"; then
-    echo "error: another firstmate session may hold the lock ($(fm_lock_holder_label "$old")); operate read-only until resolved" >&2
+  if conflict=$(fm_lock_conflict_message "$old"); then
+    echo "$conflict" >&2
     exit 1
   fi
 fi
@@ -115,9 +130,11 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
     echo "error: session lock is unreadable; operate read-only until resolved" >&2
     exit 1
   }
-  if [ "$old" != "$me" ] && fm_harness_pid_excludes "$old"; then
-    echo "error: another firstmate session may hold the lock ($(fm_lock_holder_label "$old")); operate read-only until resolved" >&2
-    exit 1
+  if [ "$old" != "$me" ]; then
+    if conflict=$(fm_lock_conflict_message "$old"); then
+      echo "$conflict" >&2
+      exit 1
+    fi
   fi
 fi
 if ! { printf '%s\n' "$me" > "$LOCK"; } 2>/dev/null; then

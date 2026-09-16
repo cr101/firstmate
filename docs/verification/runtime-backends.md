@@ -8,7 +8,7 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 
 ## Experimental native Windows ownership candidate
 
-Verified on 2026-09-15 and 2026-09-16 with Codex app-server 0.154.0, Windows 10.0.26200 x86_64, and the saved unelevated Windows sandbox.
+This section retains refresh entry points only; no current-build output has been recorded by the verification owner.
 [`../native-windows-codex.md`](../native-windows-codex.md) owns current setup, safety boundaries, and supported limits for this isolated candidate.
 
 Refresh the portable request-policy regression with:
@@ -17,8 +17,7 @@ Refresh the portable request-policy regression with:
 bash tests/fm-native-owner-tool-gate.test.sh
 ```
 
-The portable policy command above and native receipt command below remain refresh entry points.
-No attributable terminal output was retained for their latest runs, so this record does not claim those results as current evidence:
+Refresh native receipt persistence and operation lifetime with:
 
 ```sh
 bash tests/fm-native-owner-receipt-live-e2e.test.sh
@@ -30,39 +29,12 @@ Refresh effective app and MCP isolation without a model turn:
 FM_LIVE_NATIVE_APP_POLICY=1 bash tests/fm-native-owner-app-server-policy-live-e2e.test.sh
 ```
 
-Observed terminal result:
-
-```text
-PASS: effective app and MCP catalogs are isolated {"appsFeatureEnabled":false,"pluginsFeatureEnabled":false,"configuredMcpServers":["inherited_probe"],"enabledMcpServers":[],"exposedApps":[],"activeMcpServers":[]}
-```
-
 Refresh the actual Windows integration with the explicit two-model-turn guard:
 
 ```sh
 FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_CODEX=1 \
   bash tests/fm-native-owner-codex-live-e2e.test.sh
 ```
-
-Observed terminal results:
-
-```text
-PASS: model-free registered operation bridge.
-PASS: real app-server notification cycle, handling, acknowledgement, replay refusal, and foreign-thread denial.
-```
-
-The actual primary thread read and acknowledged one controlled inbox notification after the startup operation expired.
-A new fixed operation performed each check and acknowledgement through unchanged Firstmate command owners; the queue became empty and the note moved to handled.
-A repeated receipt and a request from another real thread were refused without another native operation.
-The checkpoint exercised its three-second timeout followed by a drain, not immediate interrupt-driven delivery.
-Both app-server threads reported read-only filesystem policy, disabled network access, and approval policy `never`; the two explicitly authorized host operations execute outside ordinary model shell tools.
-Dynamic tool registration requires the experimental API capability in this version.
-The actual app-server acknowledgement is also checked against the durable journal's owner generation, captured queue targets, and handled-note content hash.
-The host revokes new calls before shutdown, stops only its fixed operation jobs, and confirms app-server exit through its retained process object.
-Kill-on-close is applied only to fixed operation jobs, not the encompassing session or independently owned worker jobs.
-Two additional model-free cases interrupt the real acknowledgement scripts after the inbox move and after the queue acknowledgement, respectively.
-A new controller preserves the partial case as unresolved and reconciles the completed case from matching durable effects without replaying either mutation.
-Missing, changed, malformed, reparse-point, or incomplete evidence remains unresolved; recovery does not mean retrying or undoing a partial acknowledgement.
-The receipt evidence also supports multiple inbox targets and general wake records with no inbox target; an unrelated note is never consumed.
 
 ### Explicit launcher integration
 
@@ -75,11 +47,9 @@ FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE
   bash tests/fm-native-owner-launcher-live-e2e.test.sh
 ```
 
-No attributable terminal output was retained for the latest launcher runs, so this record does not claim their results as current evidence.
-
 ## Harness detection precedence
 
-Firstmate's own harness comes from two kinds of evidence, and `bin/fm-harness.sh` owns how they combine: an environment marker names its harness, and the nearest harness process in the parent chain proves who owns the process tree.
+`bin/fm-harness.sh` owns native-owner, marker, and ancestry precedence; the evidence below covers marker and ancestry only, not the experimental native candidate.
 A marker alone is not proof of ownership, because it is ordinary environment state that a child inherits and a terminal multiplexer can replay into an unrelated session.
 Verified on 2026-09-02 on Linux 7.1.12 with the portable regression, which builds every case from real renamed processes and no installed harness:
 

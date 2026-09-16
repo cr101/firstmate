@@ -67,9 +67,10 @@ public static partial class NativeOwner {
             shutdownRequested=true;
             foreach(var scope in scopes) if(scope.role=="owner-operation") NativeOperationLifetime.Stop(scope.job,1500);
             verdict["operationState"]="stopped";
+            verdict["reconciliationRequired"]=operationJournal.NeedsReconciliation;
             return;
         }
-        if(shutdownRequested) { verdict["operationState"]="stopped";return; }
+        if(shutdownRequested) { verdict["operationState"]="stopped";verdict["reconciliationRequired"]=operationJournal.NeedsReconciliation;return; }
         bool ready=true,startupFailed=false;
         foreach(var scope in scopes) if(scope.purpose=="startup") {
             if(WaitForSingleObject(scope.process.process,0)==WAIT_TIMEOUT) ready=false;

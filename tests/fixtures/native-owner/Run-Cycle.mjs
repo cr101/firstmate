@@ -33,6 +33,7 @@ if(fault) {
  const journal=()=>fs.readFileSync(path.join(spec.leaseHome,'owner-receipts.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  const historyBefore=journal();
  if(historyBefore.at(-1).event!=='ack-started'||!native.receiptNeedsReconciliation)throw Error('Interrupted intent was not preserved');
+ if(!host.shutdown.reconciliationRequired||!run.stderr.includes('Acknowledgement completion is unconfirmed. Its records are preserved and require reconciliation:'))throw Error('Shutdown did not surface the preserved reconciliation requirement');
  if((before.length===0)!==(fault==='complete'))throw Error('Fault did not land at the requested mutation boundary');
  const recovery=path.join(home,'recovery');fs.mkdirSync(recovery);
  const recoverySpec={home:recovery,leaseHome:spec.leaseHome,executable:build.binary,arguments:'sleep 100',timeoutSeconds:10,pipeAcl:'UserOnly'};

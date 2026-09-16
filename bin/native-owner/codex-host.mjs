@@ -7,7 +7,7 @@ import net from 'node:net';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {createNotificationGate} from './codex-tool-gate.mjs';
-import {createHostLifecycle} from './host-lifecycle.mjs';
+import {createHostLifecycle,reconciliationWarning} from './host-lifecycle.mjs';
 import {discoverMcpServerNames,isolatedAppServerArgs,verifyExternalToolConfiguration,verifyExternalToolIsolation} from './app-server-policy.mjs';
 const runtime=process.env.FM_PROBE_HOME,root=process.env.FM_PROBE_CODE_ROOT;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -77,7 +77,7 @@ async function interrupt(signal){
 async function operation(action,extra={}){
  if(action==='check'){
   const status=await native('status');
-  if(status.operationState==='starting')return {operationState:'quiet'};
+  if(status.operationState==='starting')return status;
   if(status.operationState!=='ready')throw Error('Native work unavailable: '+status.operationState);
   const previous=await native('result');if(previous.operationState==='delivered')return previous;
  }
@@ -109,7 +109,7 @@ function stop(){
  if(lifecycle)return lifecycle.shutdown();
  closing=true;consoleInput.close();process.stdin.destroy();
  lifecycle=createHostLifecycle({gate:{close:()=>gate?.close()},interrupt,
-  stopOperations:async signal=>(await native('shutdown',{},signal)).operationState==='stopped',
+  stopOperations:async signal=>{const value=await native('shutdown',{},signal);return {stopped:value.operationState==='stopped',reconciliationRequired:value.reconciliationRequired===true};},
   closeInput:()=>{if(server)server.stdin.end();},
   waitForExit:signal=>!alive?Promise.resolve(true):new Promise(resolve=>{
    const exit=()=>{signal.removeEventListener('abort',abort);resolve(true);};
@@ -119,6 +119,7 @@ function stop(){
  const result=lifecycle.shutdown();
  void result.then(value=>{
   fs.writeFileSync(path.join(runtime,'shutdown.json'),JSON.stringify(value));
+  if(value.reconciliationRequired)console.error(reconciliationWarning(path.join(process.env.FM_HOME,'owner-receipts.jsonl')));
   if(!value.stopped){console.error('Shutdown was not fully confirmed; durable work was preserved.');process.exitCode=1;}
   channel.close();socket.destroy();
  });

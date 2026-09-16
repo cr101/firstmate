@@ -291,6 +291,11 @@ public static partial class NativeOwner {
             if(TryOwnerCommand(args,out ownerResult)) return ownerResult;
             if(args.Length>0 && args[0]=="client") return Client(args.Length>1 ? args[1] : "agent-tool");
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }
+            if(args.Length==2 && args[0]=="operation-parent") {
+                using(var descendant=Process.Start(new ProcessStartInfo(OwnExe,"sleep 10000") {UseShellExecute=false})) {
+                    File.WriteAllText(args[1],descendant.Id.ToString());descendant.WaitForExit();return descendant.ExitCode;
+                }
+            }
             if(args.Length==3 && args[0]=="lease-check") return LeaseCheck(args[1],args[2]);
             if(args.Length==2 && args[0]=="notification-operation") {
                 if(args[1]!="check" && args[1]!="ack") throw new ArgumentException("Unsupported notification operation");

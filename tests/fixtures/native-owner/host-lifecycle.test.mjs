@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHostLifecycle} from '../../../bin/native-owner/host-lifecycle.mjs';
+import {createHostLifecycle,reconciliationWarning} from '../../../bin/native-owner/host-lifecycle.mjs';
 function setup(overrides = {}) {
   const events = [];
   const lifecycle = createHostLifecycle({
@@ -20,7 +20,14 @@ test('shutdown revokes synchronously and is single-flight', async () => {
   assert.deepEqual(events, ['revoke']);
   const result = await first;
   assert.deepEqual(events, ['revoke', 'interrupt', 'operations', 'eof', 'exited']);
-  assert.deepEqual(result, {stopped:true, operationsStopped:true, exited:true, forced:false, errors:[]});
+  assert.deepEqual(result, {stopped:true, operationsStopped:true, reconciliationRequired:false, exited:true, forced:false, errors:[]});
+});
+test('shutdown preserves a reconciliation requirement after operations stop', async () => {
+  const {lifecycle} = setup({stopOperations: async () => ({stopped:true,reconciliationRequired:true})});
+  const result = await lifecycle.shutdown();
+  assert.equal(result.stopped, true);
+  assert.equal(result.reconciliationRequired, true);
+  assert.match(reconciliationWarning('C:\\home\\owner-receipts.jsonl'), /completion is unconfirmed.*preserved.*require reconciliation/);
 });
 test('unconfirmed operation shutdown is not reported as success', async () => {
   const {lifecycle, events} = setup({stopOperations: async () => false});

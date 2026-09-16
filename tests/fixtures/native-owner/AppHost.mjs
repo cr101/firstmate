@@ -1,7 +1,7 @@
 // Disposable host adapter. Only this process owns the app-server connection.
 // Dynamic tool arguments never select a thread, executable, home, or command.
 import {createNotificationGate} from './codex-tool-gate.mjs';
-import {createHostLifecycle} from './host-lifecycle.mjs';
+import {createHostLifecycle,reconciliationWarning} from './host-lifecycle.mjs';
 import {discoverMcpServerNames,isolatedAppServerArgs,verifyExternalToolConfiguration,verifyExternalToolIsolation} from './app-server-policy.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,6 +41,7 @@ async function operation(action,extra={}) {
   if(action==='ack'&&process.env.FM_PROBE_ACK_FAULT&&fs.existsSync(path.join(home,'ack-fault-ready'))) {
    const stopped=await native('shutdown');
    if(stopped.operationState!=='stopped')throw Error('Interrupted operation did not stop');
+   if(!stopped.reconciliationRequired)throw Error('Interrupted acknowledgement did not require reconciliation');
    return {operationState:'interrupted'};
   }
   const result=await native('result');
@@ -136,12 +137,13 @@ try {
  const lifecycle=createHostLifecycle({
   gate:{close:()=>gate?.close()},
   interrupt:()=>{if(activeTurn&&alive)void request('turn/interrupt',{threadId:primary,turnId:activeTurn}).catch(()=>{});},
-  stopOperations:async signal=>(await native('shutdown',{},signal)).operationState==='stopped',
+  stopOperations:async signal=>{const value=await native('shutdown',{},signal);return {stopped:value.operationState==='stopped',reconciliationRequired:value.reconciliationRequired===true};},
   closeInput:()=>child.stdin.end(),
   waitForExit:signal=>!alive?Promise.resolve(true):new Promise(resolve=>{const stop=()=>{child.removeListener('exit',exit);resolve(false);};const exit=()=>{signal.removeEventListener('abort',stop);resolve(true);};child.once('exit',exit);signal.addEventListener('abort',stop,{once:true});}),
   terminate:()=>child.kill(),graceMs:5000,
  });
  evidence.shutdown=await lifecycle.shutdown();
+ if(evidence.shutdown.reconciliationRequired)console.error(reconciliationWarning(path.join(process.env.FM_HOME,'owner-receipts.jsonl')));
  if(!evidence.shutdown.stopped){evidence.passed=false;process.exitCode=1;}
  clearTimeout(timer);
  save();fs.writeFileSync(path.join(home,'app-server.stderr'),stderr);
