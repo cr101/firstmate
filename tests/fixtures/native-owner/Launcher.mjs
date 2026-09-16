@@ -14,7 +14,7 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function command(exe,args){const result=spawnSync(exe,args,{encoding:'utf8',timeout:120000});if(result.status!==0)throw Error(result.stderr||result.stdout);return result;}
 command('git',['-c','core.symlinks=true','clone','--quiet','--no-local','--single-branch',repo,code]);
 fs.cpSync(path.join(repo,'bin/native-owner'),path.join(code,'bin/native-owner'),{recursive:true});
-for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh','fm-backlog-transition-lib.sh','fm-supervision-lib.sh','fm-wake-lib.sh','fm-startup-network.sh','fm-inbox.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
+for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh','fm-backlog-transition-lib.sh','fm-supervision-lib.sh','fm-wake-lib.sh','fm-startup-network.sh','fm-inbox.sh','fm-lock.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
 const launcher=path.join(code,'bin/fm-native-codex.ps1');
 command('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly']);
 const removedAlias=spawnSync('powershell.exe',['-NoProfile','-File',launcher,'-BuildOnly','-Home',path.join(area,'alias')],{encoding:'utf8',timeout:120000});
@@ -35,10 +35,27 @@ async function ready(session,previous){
  }
  throw Error('Launcher readiness timed out');
 }
+async function waitUntil(session,label,predicate,ms=40000){
+ const limit=Date.now()+ms;
+ while(Date.now()<limit){
+  if(session.child.exitCode!==null)throw Error(label+': '+JSON.stringify(await session.done));
+  try {if(predicate())return;}catch(error){if(error.code!=='ENOENT'&&!(error instanceof SyntaxError))throw error;}
+  await sleep(50);
+ }
+ throw Error(label+' timed out');
+}
 const records=[];
 const live=process.argv.includes('--live');
 if(live&&process.env.FM_LIVE_NATIVE_CODEX!=='1')throw Error('Live launcher tests require FM_LIVE_NATIVE_CODEX=1');
 const posix=value=>value.replaceAll('\\','/').replace(/^([A-Za-z]):/,(_,drive)=>'/'+drive.toLowerCase());
+const contractHome=path.join(area,'predicate-contracts'),contractEnv={...process.env,FM_HOME:posix(contractHome),MSYS:'winsymlinks:nativestrict'};
+for(const script of ['fm-inbox.sh','fm-startup-network.sh']){
+ const executable=posix(path.join(code,'bin',script)),help=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',executable,'--help'],{env:contractEnv,encoding:'utf8',timeout:30000});
+ assert.equal(help.status,0,help.stderr);assert(help.stdout.includes('native-admission-predicate <wake-queue>'),help.stdout);
+ const invalid=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',executable,'native-admission-predicate'],{env:contractEnv,encoding:'utf8',timeout:30000});
+ assert.equal(invalid.status,2,invalid.stderr);assert(invalid.stderr.includes('native-admission-predicate <wake-queue>'),invalid.stderr);
+}
+records.push('internal owner predicates publish and enforce their usage, output, and exit contracts');
 function enqueue(home,message){
  fs.mkdirSync(home,{recursive:true});
  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('FM_')&&!key.startsWith('PI_')));
@@ -51,12 +68,7 @@ function appendStartupWake(home,state){
  const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','. "$1/bin/fm-wake-lib.sh"; fm_wake_append_startup_network "$2"','startup-wake',posix(code),state],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
 }
-function captureAcknowledgement(home){
- const env={...process.env,FM_HOME:home,MSYS:'winsymlinks:nativestrict'};
- const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(code,'bin/native-owner/ack-evidence.sh')),'capture-json'],{env,encoding:'utf8',timeout:30000});
- assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
- return JSON.parse(result.stdout);
-}
+const journalRows=home=>fs.readFileSync(path.join(home,'owner-receipts.jsonl'),'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
 const home=path.join(area,'home');fs.mkdirSync(path.join(home,'data'),{recursive:true});
 fs.writeFileSync(path.join(home,'data/backlog.md'),'## In flight\n\n## Queued\n\n## Done\n');
 const first=start(home);const initial=await ready(first);console.error('first ready',area);
@@ -83,13 +95,31 @@ const populated=path.join(area,'populated');fs.mkdirSync(path.join(populated,'st
 const blocked=start(populated);blocked.child.stdin.end();assert.notEqual((await bound(blocked.done,blocked,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(populated,'state/work.meta'),'utf8'),'preserve');assert.equal(fs.existsSync(path.join(populated,'owner-probe.json')),false);
 records.push('populated home refused without changing its records');
-for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrupted-close','state/orphan.backlog-close'],['residual-turn-end','state/orphan.turn-ended']]){
+for(const [name,relative] of [['orphan-status','state/orphan.status'],['interrupted-close','state/orphan.backlog-close'],['residual-turn-end','state/orphan.turn-ended'],['away-marker','state/.afk'],['away-contract','state/.afk-contract']]){
  const residualHome=path.join(area,name),record=path.join(residualHome,relative),contents='preserve residual task state';
  fs.mkdirSync(path.dirname(record),{recursive:true});fs.writeFileSync(record,contents);
  const refusedResidual=start(residualHome);refusedResidual.child.stdin.end();assert.notEqual((await bound(refusedResidual.done,refusedResidual,20000)).exit,0);
  assert.equal(fs.readFileSync(record,'utf8'),contents);assert.equal(fs.existsSync(path.join(residualHome,'owner-probe.json')),false);
 }
-records.push('orphan status, interrupted-close, and turn-end records refused before lease acquisition and preserved');
+records.push('orphan status, interrupted-close, turn-end, and away records refused before lease acquisition and preserved');
+const namedHarness=path.join(area,'codex.exe'),holderPidFile=path.join(area,'ordinary-holder.pid'),liveLockHome=path.join(area,'live-lock'),liveLock=path.join(liveLockHome,'state/.lock');
+fs.copyFileSync('C:/Program Files/Git/usr/bin/sleep.exe',namedHarness);fs.mkdirSync(path.dirname(liveLock),{recursive:true});
+const holder=spawn('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','"$1" 60 & child=$!; printf "%s\\n" "$child" > "$2"; wait "$child"','lock-holder',posix(namedHarness),posix(holderPidFile)],{stdio:'ignore'});
+const holderDone=new Promise(resolve=>holder.on('exit',resolve));
+let holderPid;
+try {
+ await waitUntil({child:holder,done:holderDone,home:liveLockHome},'ordinary lock holder',()=>{holderPid=fs.readFileSync(holderPidFile,'utf8').trim();return /^[0-9]+$/.test(holderPid);},10000);
+ const holderAlive=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','kill -0 "$1"','holder-check',holderPid],{encoding:'utf8',timeout:10000});assert.equal(holderAlive.status,0,holderAlive.stderr);
+ fs.writeFileSync(liveLock,holderPid+'\n');
+ const locked=start(liveLockHome);locked.child.stdin.end();const lockedResult=await bound(locked.done,locked,20000);
+ assert.notEqual(lockedResult.exit,0);assert.equal(fs.readFileSync(liveLock,'utf8'),holderPid+'\n');assert.equal(fs.existsSync(path.join(liveLockHome,'owner-probe.json')),false);
+}finally{
+ if(holderPid)spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','kill "$1" 2>/dev/null || true','holder-stop',holderPid],{encoding:'utf8',timeout:10000});
+ await Promise.race([holderDone,sleep(3000)]);
+}
+const unknownLockHome=path.join(area,'unknown-lock'),unknownLock=path.join(unknownLockHome,'state/.lock');fs.mkdirSync(path.dirname(unknownLock),{recursive:true});fs.writeFileSync(unknownLock,'native:'+'0'.repeat(32)+'\n');
+const unknownLocked=start(unknownLockHome);unknownLocked.child.stdin.end();assert.notEqual((await bound(unknownLocked.done,unknownLocked,20000)).exit,0);assert.equal(fs.readFileSync(unknownLock,'utf8'),'native:'+'0'.repeat(32)+'\n');assert.equal(fs.existsSync(path.join(unknownLockHome,'owner-probe.json')),false);
+records.push('live ordinary and unresolved native session locks refuse launch before native ownership publication');
 const queuedHome=path.join(area,'supported-queued-restart'),queuedNote=enqueue(queuedHome,'Preserve this supported notification across a native restart.');
 const queuedBody=fs.readFileSync(path.join(queuedHome,'state/inbox',queuedNote+'.note'),'utf8');
 const queuedSession=start(queuedHome);const queuedReady=await ready(queuedSession);queuedSession.child.stdin.end();
@@ -100,30 +130,52 @@ const queuedRestart=start(queuedHome);await ready(queuedRestart,queuedReady.owne
 assert.equal((await bound(queuedRestart.done,queuedRestart,20000)).exit,0);
 assert.equal(fs.readFileSync(path.join(queuedHome,'state/inbox',queuedNote+'.note'),'utf8'),queuedBody);
 records.push('producer-created inbox and native handling recovery remain admissible across restart');
+const uncorrelatedHome=path.join(area,'uncorrelated-acked'),uncorrelatedNote=enqueue(uncorrelatedHome,'Preserve this ordinary interrupted acknowledgement.');
+const uncorrelatedMarker=path.join(uncorrelatedHome,'state/.watcher-down'),uncorrelatedMarkerBefore=fs.readFileSync(uncorrelatedMarker,'utf8');
+const uncorrelatedAcked=uncorrelatedMarkerBefore.replace(/^(pending|announced):/,'acked:');assert.notEqual(uncorrelatedAcked,uncorrelatedMarkerBefore);fs.writeFileSync(uncorrelatedMarker,uncorrelatedAcked);
+const uncorrelatedQueue=fs.readFileSync(path.join(uncorrelatedHome,'state/.wake-queue'),'utf8'),uncorrelatedBody=fs.readFileSync(path.join(uncorrelatedHome,'state/inbox',uncorrelatedNote+'.note'),'utf8');
+const uncorrelated=start(uncorrelatedHome);uncorrelated.child.stdin.end();assert.notEqual((await bound(uncorrelated.done,uncorrelated,20000)).exit,0);
+assert.equal(fs.existsSync(path.join(uncorrelatedHome,'owner-probe.json')),false);assert.equal(fs.readFileSync(uncorrelatedMarker,'utf8'),uncorrelatedAcked);assert.equal(fs.readFileSync(path.join(uncorrelatedHome,'state/.wake-queue'),'utf8'),uncorrelatedQueue);assert.equal(fs.readFileSync(path.join(uncorrelatedHome,'state/inbox',uncorrelatedNote+'.note'),'utf8'),uncorrelatedBody);
+records.push('uncorrelated acknowledged recovery is refused and preserved before lease acquisition');
 const historicalHome=path.join(area,'historical-startup-completion'),historicalState=path.join(historicalHome,'state'),historicalStatus=path.join(historicalState,'.startup-network.status');
 fs.mkdirSync(historicalState,{recursive:true});fs.writeFileSync(historicalStatus,'generation=historical\nstate=failed\n');appendStartupWake(historicalHome,'failed');
 const historicalRow=fs.readFileSync(path.join(historicalState,'.wake-queue'),'utf8');fs.writeFileSync(historicalStatus,'generation=newer\nstate=done\n');
 const historicalSession=start(historicalHome);await ready(historicalSession);historicalSession.child.stdin.end();assert.equal((await bound(historicalSession.done,historicalSession,20000)).exit,0);
 assert(fs.readFileSync(path.join(historicalState,'.wake-queue'),'utf8').includes(historicalRow.trim()));
 records.push('queued startup failure survives a newer startup status and remains admissible');
+const hostScript=path.join(code,'bin/native-owner/codex-host.mjs'),wakeDrain=path.join(code,'bin/fm-wake-drain.sh'),hostSource=fs.readFileSync(hostScript,'utf8'),wakeDrainSource=fs.readFileSync(wakeDrain,'utf8');
+fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fake-app-server.mjs'),path.join(code,'bin/native-owner/fake-app-server.mjs'));
+fs.writeFileSync(hostScript,"import {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[]}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
+const completedHome=path.join(area,'completed-ack-restart'),completedNote=enqueue(completedHome,'Complete this controlled acknowledgement before restart.');
+const completedSession=start(completedHome,false);const completedReady=await ready(completedSession);
+await waitUntil(completedSession,'completed acknowledgement',()=>journalRows(completedHome).at(-1)?.event==='acknowledged'&&fs.existsSync(path.join(completedHome,'state/inbox/handled',completedNote+'.note'))&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()==='');
+completedSession.child.stdin.write('/quit\n');assert.equal((await bound(completedSession.done,completedSession,20000)).exit,0);
+const completedRestart=start(completedHome);await ready(completedRestart,completedReady.owner.generation);completedRestart.child.stdin.end();assert.equal((await bound(completedRestart.done,completedRestart,20000)).exit,0);
+records.push('journal-correlated completed acknowledgement remains admissible across restart');
+const acknowledgementBoundary='  if ! _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then';
+if(!wakeDrainSource.includes(acknowledgementBoundary))throw Error('Acknowledgement boundary fixture could not be installed');
+fs.writeFileSync(wakeDrain,wakeDrainSource.replace(acknowledgementBoundary,'  printf "ready\\n" > "${FM_PROBE_HOME:?}/ack-boundary-ready"\n  sleep 30\n'+acknowledgementBoundary));
 const interruptedHome=path.join(area,'interrupted-ack-restart'),interruptedNote=enqueue(interruptedHome,'Preserve this interrupted acknowledgement for reconciliation.');
-const preparedSession=start(interruptedHome);const prepared=await ready(preparedSession);preparedSession.child.stdin.end();assert.equal((await bound(preparedSession.done,preparedSession,20000)).exit,0);
-const target=captureAcknowledgement(interruptedHome),receipt='c'.repeat(32),payload={...target,challenge:'interrupted-restart',message:'preserved partial acknowledgement'};
-const journal=path.join(interruptedHome,'owner-receipts.jsonl'),journalRows=[
- {version:1,home:path.resolve(interruptedHome),generation:prepared.owner.generation,event:'presented',receipt,payload,targetEvidence:null,ackGeneration:null},
- {version:1,home:path.resolve(interruptedHome),generation:prepared.owner.generation,event:'ack-started',receipt,payload,targetEvidence:target.ownerEvidence,ackGeneration:null},
-];
-fs.appendFileSync(journal,journalRows.map(row=>JSON.stringify(row)).join('\n')+'\n');
-const interruptedQueue=path.join(interruptedHome,'state/.wake-queue'),queueBeforeRestart=fs.readFileSync(interruptedQueue,'utf8'),pendingNote=path.join(interruptedHome,'state/inbox',interruptedNote+'.note'),handledNote=path.join(interruptedHome,'state/inbox/handled',interruptedNote+'.note');
-fs.mkdirSync(path.dirname(handledNote),{recursive:true});fs.renameSync(pendingNote,handledNote);const handledBody=fs.readFileSync(handledNote,'utf8');
-const interruptedMarker=path.join(interruptedHome,'state/.watcher-down'),markerBody=`acked:handling:${target.generation}\n`;fs.writeFileSync(interruptedMarker,markerBody);
+const interruptedQueue=path.join(interruptedHome,'state/.wake-queue'),queueBeforeRestart=fs.readFileSync(interruptedQueue,'utf8'),handledNote=path.join(interruptedHome,'state/inbox/handled',interruptedNote+'.note'),interruptedMarker=path.join(interruptedHome,'state/.watcher-down');
+let interruptedSession,interruptedReady,interruptedResult,markerBody,handledBody;
+try {
+ interruptedSession=start(interruptedHome,false);interruptedReady=await ready(interruptedSession);
+ await waitUntil(interruptedSession,'acknowledgement marker boundary',()=>fs.existsSync(path.join(interruptedReady.runtime,'ack-boundary-ready')));
+ assert.deepEqual(journalRows(interruptedHome).map(row=>row.event),['session','presented','ack-started']);
+ markerBody=fs.readFileSync(interruptedMarker,'utf8');assert.match(markerBody,/^acked:handling:[A-Za-z0-9._-]+\n$/);
+ handledBody=fs.readFileSync(handledNote,'utf8');assert.equal(fs.readFileSync(interruptedQueue,'utf8'),queueBeforeRestart);
+ interruptedSession.child.stdin.write('/quit\n');interruptedResult=await bound(interruptedSession.done,interruptedSession,20000);assert.equal(interruptedResult.exit,0,interruptedResult.stderr);
+}finally{
+ if(interruptedSession?.child.exitCode===null){interruptedSession.child.stdin.write('/quit\n');try{await bound(interruptedSession.done,interruptedSession,20000);}catch{}}
+ fs.writeFileSync(hostScript,hostSource);fs.writeFileSync(wakeDrain,wakeDrainSource);
+}
 const interruptedRestart=start(interruptedHome);interruptedRestart.child.stdin.end();const reconciliation=await bound(interruptedRestart.done,interruptedRestart,20000);
 assert.notEqual(reconciliation.exit,0);assert(reconciliation.stderr.includes('earlier acknowledgement is incomplete'),reconciliation.stderr);
-const reconciledOwner=read(path.join(interruptedHome,'owner-probe.json'));assert.notEqual(reconciledOwner.generation,prepared.owner.generation);
+const reconciledOwner=read(path.join(interruptedHome,'owner-probe.json'));assert.notEqual(reconciledOwner.generation,interruptedReady.owner.generation);
 const reconciliationRuntime=path.join(interruptedHome,'state/native-runtime',reconciledOwner.generation);
 assert.equal(fs.existsSync(path.join(reconciliationRuntime,'startup.log')),false);assert.equal(fs.existsSync(path.join(reconciliationRuntime,'startup.finished')),false);
 assert.equal(fs.readFileSync(interruptedQueue,'utf8'),queueBeforeRestart);assert.equal(fs.readFileSync(interruptedMarker,'utf8'),markerBody);assert.equal(fs.readFileSync(handledNote,'utf8'),handledBody);
-records.push('partial acknowledgement reaches reconciliation unchanged without restarting startup');
+records.push('real acknowledgement interrupted after marker commit reaches reconciliation unchanged without restarting startup');
 const maskedHome=path.join(area,'bash-env-mask'),maskedStatus=path.join(maskedHome,'state/orphan.status'),mask=path.join(area,'bash-env-exit.sh');
 fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maskedStatus,'preserve masked residual state');fs.writeFileSync(mask,'exit 0\n');
 const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);

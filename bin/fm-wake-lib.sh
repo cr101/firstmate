@@ -17,7 +17,8 @@
 # bounded queue, presentation, and recovery state, while the inbox and deferred
 # startup owners decide which of their rows are supported. It is read-only,
 # rejects branch grants and unknown or malformed rows, and reports refusals in
-# FM_WAKE_NATIVE_ADMISSION_ERROR.
+# FM_WAKE_NATIVE_ADMISSION_ERROR. An acknowledged marker is accepted only with
+# matching evidence selected by the native receipt-journal owner.
 
 FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
@@ -2123,8 +2124,8 @@ fm_wake_grant_rows_valid() {  # <rows-file>
 }
 
 FM_WAKE_NATIVE_ADMISSION_ERROR=
-fm_wake_native_empty_fleet_preflight() {  # <state-dir>
-  local state=$1 queue marker seq_file main_rows history record size counter
+fm_wake_native_empty_fleet_preflight() {  # <state-dir> [<native-ack-evidence>]
+  local state=$1 native_evidence=${2:-} queue marker seq_file main_rows history record size counter
   local row_count inbox_count startup_count status
   FM_WAKE_NATIVE_ADMISSION_ERROR=
   queue="$state/.wake-queue"
@@ -2216,6 +2217,14 @@ fm_wake_native_empty_fleet_preflight() {  # <state-dir>
       FM_WAKE_NATIVE_ADMISSION_ERROR="wake recovery state is unrecognized at $marker"
       return 1
     fi
+    case "$FM_RECOVERY_MARKER_TOKEN" in
+      acked:*)
+        if [ -z "$native_evidence" ] || ! fm_wake_ack_evidence_native_recovery "$native_evidence" "$marker"; then
+          FM_WAKE_NATIVE_ADMISSION_ERROR="acknowledged wake recovery is not owned by the native receipt journal"
+          return 1
+        fi
+        ;;
+    esac
   elif [ -s "$queue" ]; then
     FM_WAKE_NATIVE_ADMISSION_ERROR="queued wakes have no recovery generation at $marker"
     return 1
@@ -2542,6 +2551,20 @@ fm_wake_ack_evidence_load() {  # <opaque-token>
   fi
   rm -f -- "$notes_derived" "$expected_notes"
   FM_WAKE_ACK_EVIDENCE_TOKEN=$token
+}
+
+fm_wake_ack_evidence_native_recovery() {  # <opaque-token> <marker>
+  local token=$1 marker=$2 current expected
+  fm_wake_ack_evidence_load "$token" || return 1
+  fm_recovery_marker_read "$marker" || { fm_wake_ack_evidence_clear; return 1; }
+  current=$FM_RECOVERY_MARKER_TOKEN
+  if [ "$FM_WAKE_ACK_EVIDENCE_LEGACY" = 1 ] && [ -z "$FM_WAKE_ACK_EVIDENCE_MARKER" ]; then
+    case "$current" in acked:handling:*|acked:downtime:*) ;; *) fm_wake_ack_evidence_clear; return 1 ;; esac
+  else
+    expected="acked:${FM_WAKE_ACK_EVIDENCE_MARKER#*:}"
+    [ "$current" = "$expected" ] || { fm_wake_ack_evidence_clear; return 1; }
+  fi
+  fm_wake_ack_evidence_clear
 }
 
 fm_wake_ack_evidence_precondition() {  # <opaque-token>

@@ -4,6 +4,8 @@
 # the shell's ancestry and an opaque launch-bound identity for the native owner.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
+#        fm-lock.sh native-admission-predicate
+#                             exit 0 only when no owner excludes a native launch
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,6 +52,37 @@ fm_lock_conflict_message() {
   fi
   return 1
 }
+
+if [ "${1:-}" = "native-admission-predicate" ]; then
+  [ "$#" -eq 1 ] || {
+    echo "usage: fm-lock.sh native-admission-predicate" >&2
+    exit 2
+  }
+  if [ ! -e "$LOCK" ] && [ ! -L "$LOCK" ]; then
+    exit 0
+  fi
+  if [ ! -f "$LOCK" ] || [ -L "$LOCK" ]; then
+    echo "error: session lock is not a readable regular file; native launch refused" >&2
+    exit 1
+  fi
+  old=$(cat "$LOCK" 2>/dev/null) || {
+    echo "error: session lock is unreadable; native launch refused" >&2
+    exit 1
+  }
+  if ! fm_session_pid_valid "$old"; then
+    echo "error: session lock owner is unrecognized; native launch refused" >&2
+    exit 1
+  fi
+  if fm_harness_pid_excludes "$old"; then
+    if conflict=$(fm_lock_conflict_message "$old"); then
+      echo "$conflict" >&2
+    else
+      echo "error: another firstmate session may hold the lock; native launch refused" >&2
+    fi
+    exit 1
+  fi
+  exit 0
+fi
 
 if [ "${1:-}" = "status" ]; then
   if [ ! -f "$LOCK" ]; then echo "lock: free"; exit 0; fi

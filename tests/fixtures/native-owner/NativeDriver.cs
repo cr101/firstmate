@@ -106,51 +106,51 @@ public static partial class NativeOwner {
             Console.WriteLine("PASS: inherited Windows environment denylist is case-insensitive");
             string residual=Path.Combine(directory,"residual"),residualState=Path.Combine(residual,"state"),status=Path.Combine(residualState,"orphan.status");
             Directory.CreateDirectory(residualState);File.WriteAllText(status,"preserve\n");
-            bool refused=false;try{EmptyFleet(residual);}catch(InvalidOperationException){refused=true;}
+            bool refused=false;try{EmptyFleet(residual,true);}catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(status)!="preserve\n")throw new InvalidOperationException("Mixed-case BASH_ENV bypassed empty-home admission");
             Console.WriteLine("PASS: fixed Bash admission ignores mixed-case ambient authority");
             string registered=Path.Combine(directory,"registered"),registeredState=Path.Combine(registered,"state"),canary=Path.Combine(registered,"executed");
             Directory.CreateDirectory(registeredState);
             File.WriteAllText(Path.Combine(registeredState,"custom.check.sh"),"#!/usr/bin/env bash\nprintf executed > \""+canary.Replace('\\','/')+"\"\n");
             File.WriteAllText(Path.Combine(registeredState,"custom.check-trust"),"fm-custom-check-v1\n"+new string('0',64)+"\n");
-            refused=false;try{EmptyFleet(registered);using(var lease=new NativeHomeLease(registered)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(registered,true);using(var lease=new NativeHomeLease(registered)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.Exists(canary)||File.Exists(Path.Combine(registered,"owner-probe.json"))||File.Exists(Path.Combine(registeredState,".watch.lock")))throw new InvalidOperationException("Registered custom work passed admission, acquired a lease, or executed during inspection");
             Console.WriteLine("PASS: registered custom checks are refused without execution");
             string unregistered=Path.Combine(directory,"unregistered"),unregisteredState=Path.Combine(unregistered,"state"),unregisteredCanary=Path.Combine(unregistered,"executed"),unregisteredCheck=Path.Combine(unregisteredState,"orphan.check.sh"),unregisteredBody="#!/usr/bin/env bash\nprintf executed > \""+unregisteredCanary.Replace('\\','/')+"\"\n";
             Directory.CreateDirectory(unregisteredState);File.WriteAllText(unregisteredCheck,unregisteredBody);
-            refused=false;try{EmptyFleet(unregistered);using(var lease=new NativeHomeLease(unregistered)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(unregistered,true);using(var lease=new NativeHomeLease(unregistered)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(unregisteredCheck)!=unregisteredBody||File.Exists(unregisteredCanary)||File.Exists(Path.Combine(unregistered,"owner-probe.json"))||File.Exists(Path.Combine(unregisteredState,".watch.lock")))throw new InvalidOperationException("Unregistered custom work passed admission, changed, acquired a lease, or executed during inspection");
             Console.WriteLine("PASS: unregistered custom checks are preserved and refused without execution");
             string pendingReply=Path.Combine(directory,"pending-reply"),pendingState=Path.Combine(pendingReply,"state"),pendingDirectory=Path.Combine(pendingState,"pending-replies"),pendingRecord=Path.Combine(pendingDirectory,"0123456789abcdef"),pendingBody="schema=fm-pending-reply.v1\nphase=awaiting_report\n";
             Directory.CreateDirectory(pendingDirectory);File.WriteAllText(pendingRecord,pendingBody);
-            refused=false;try{EmptyFleet(pendingReply);using(var lease=new NativeHomeLease(pendingReply)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(pendingReply,true);using(var lease=new NativeHomeLease(pendingReply)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(pendingRecord)!=pendingBody||File.Exists(Path.Combine(pendingReply,"owner-probe.json"))||File.Exists(Path.Combine(pendingState,".watch.lock"))||Directory.GetFiles(pendingState,"*",SearchOption.AllDirectories).Length!=1)throw new InvalidOperationException("Pending reply work passed admission, changed, or caused lease or route activity");
             Console.WriteLine("PASS: pending replies are preserved without lease or route activity");
             string reconcile=Path.Combine(directory,"reconcile-request"),reconcileState=Path.Combine(reconcile,"state"),reconcileDirectory=Path.Combine(reconcileState,"reconcile-notify"),reconcileRecord=Path.Combine(reconcileDirectory,"request-fixture.json"),reconcileBody="{\"version\":1}\n";
             Directory.CreateDirectory(reconcileDirectory);File.WriteAllText(reconcileRecord,reconcileBody);
-            refused=false;try{EmptyFleet(reconcile);using(var lease=new NativeHomeLease(reconcile)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(reconcile,true);using(var lease=new NativeHomeLease(reconcile)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(reconcileRecord)!=reconcileBody||File.Exists(Path.Combine(reconcile,"owner-probe.json"))||File.Exists(Path.Combine(reconcileState,".watch.lock"))||File.Exists(Path.Combine(reconcileState,".reconcile-notify-process.lock"))||Directory.GetFiles(reconcileState,"*",SearchOption.AllDirectories).Length!=1)throw new InvalidOperationException("Reconcile request passed admission, changed, or caused lease or route activity");
             Console.WriteLine("PASS: reconcile requests are preserved without lease or route activity");
             string handoff=Path.Combine(directory,"handoff"),outbox=Path.Combine(handoff,"data","handoff","agent.outbox.md"),outboxBody="# Backlog\n\n## Queued\n\n- [ ] routed-work\n";
             Directory.CreateDirectory(Path.GetDirectoryName(outbox));File.WriteAllText(outbox,outboxBody);
-            refused=false;try{EmptyFleet(handoff);using(var lease=new NativeHomeLease(handoff)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(handoff,true);using(var lease=new NativeHomeLease(handoff)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(outbox)!=outboxBody||File.Exists(Path.Combine(handoff,"owner-probe.json"))||Directory.Exists(Path.Combine(handoff,"state")))throw new InvalidOperationException("Pending handoff work passed admission or caused lease or route activity");
             Console.WriteLine("PASS: pending handoff work is preserved without lease or route activity");
             string steering=Path.Combine(directory,"steering"),steeringState=Path.Combine(steering,"state"),inbox=Path.Combine(steeringState,"agent.inbox"),message=Path.Combine(inbox,"001.msg"),messageBody="schema=fm-task-inbox.v1\n--\npreserve\n";
             Directory.CreateDirectory(inbox);File.WriteAllText(message,messageBody);
-            refused=false;try{EmptyFleet(steering);using(var lease=new NativeHomeLease(steering)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(steering,true);using(var lease=new NativeHomeLease(steering)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(message)!=messageBody||File.Exists(Path.Combine(steering,"owner-probe.json"))||File.Exists(Path.Combine(steeringState,".lock")))throw new InvalidOperationException("Orphan steering work passed admission or caused lease or route activity");
             Console.WriteLine("PASS: orphan steering work is preserved without lease or route activity");
             string turnEnded=Path.Combine(directory,"turn-ended"),turnEndedState=Path.Combine(turnEnded,"state"),turnEndedRecord=Path.Combine(turnEndedState,"orphan.turn-ended");
             Directory.CreateDirectory(turnEndedState);File.WriteAllText(turnEndedRecord,"preserve\n");
-            refused=false;try{EmptyFleet(turnEnded);using(var lease=new NativeHomeLease(turnEnded)){} }catch(InvalidOperationException){refused=true;}
+            refused=false;try{EmptyFleet(turnEnded,true);using(var lease=new NativeHomeLease(turnEnded)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(turnEndedRecord)!="preserve\n"||File.Exists(Path.Combine(turnEnded,"owner-probe.json"))||File.Exists(Path.Combine(turnEndedState,".lock")))throw new InvalidOperationException("Residual turn-end work passed admission or caused lease activity");
             Console.WriteLine("PASS: residual turn-end work is preserved without lease activity");
             string supported=Path.Combine(directory,"supported-notification"),supportedState=Path.Combine(supported,"state"),supportedInbox=Path.Combine(supportedState,"inbox"),supportedNote=Path.Combine(supportedInbox,"note-id.note"),supportedQueue=Path.Combine(supportedState,".wake-queue"),supportedMarker=Path.Combine(supportedState,".watcher-down"),supportedBody="preserve notification\n";
             Directory.CreateDirectory(supportedInbox);File.WriteAllText(supportedNote,supportedBody);File.WriteAllText(Path.Combine(supportedState,".wake-queue.seq"),"1\n");File.WriteAllText(supportedQueue,"1\t1\tcheck\tinbox:note-id\tcheck: captain inbox note note-id - native admission test\n");File.WriteAllText(supportedMarker,"pending:downtime:supported\n");
-            EmptyFleet(supported);
+            EmptyFleet(supported,true);
             File.WriteAllText(Path.Combine(supportedState,".main-eligible-rows"),"1\n");File.WriteAllText(supportedMarker,"pending:handling:supported\n");
-            EmptyFleet(supported);
+            EmptyFleet(supported,true);
             if(File.ReadAllText(supportedNote)!=supportedBody||!File.ReadAllText(supportedQueue).Contains("inbox:note-id")||File.ReadAllText(supportedMarker)!="pending:handling:supported\n"||File.Exists(Path.Combine(supported,"owner-probe.json")))throw new InvalidOperationException("Supported top-level notification state was changed or leased during admission");
             Console.WriteLine("PASS: supported top-level notification state remains admissible and unchanged");
             foreach(string shape in new [] {"unsupported","malformed"}) {
@@ -158,7 +158,7 @@ public static partial class NativeOwner {
                 Directory.CreateDirectory(wakeState);File.WriteAllText(Path.Combine(wakeState,".wake-queue.seq"),"1\n");File.WriteAllText(wakeMarker,"pending:downtime:preserve\n");
                 File.WriteAllText(wakeQueue,shape=="unsupported" ? "1\t1\tcheck\torphan-work\tcheck: unsupported residual work\n" : "malformed wake row\n");
                 string queueBefore=File.ReadAllText(wakeQueue),markerBefore=File.ReadAllText(wakeMarker);
-                refused=false;try{EmptyFleet(wakeHome);using(var lease=new NativeHomeLease(wakeHome)){} }catch(InvalidOperationException){refused=true;}
+                refused=false;try{EmptyFleet(wakeHome,true);using(var lease=new NativeHomeLease(wakeHome)){} }catch(InvalidOperationException){refused=true;}
                 if(!refused||File.ReadAllText(wakeQueue)!=queueBefore||File.ReadAllText(wakeMarker)!=markerBefore||File.Exists(Path.Combine(wakeHome,"owner-probe.json")))throw new InvalidOperationException("Unsupported wake state passed admission, changed, or acquired a lease");
             }
             Console.WriteLine("PASS: unsupported and malformed wake state is preserved and refused before lease acquisition");

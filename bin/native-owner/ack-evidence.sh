@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: FM_HOME=<home> ack-evidence.sh capture-json|preflight-token|verify-token|verify-legacy|acknowledge-token
+# Usage: FM_HOME=<home> ack-evidence.sh capture-json|legacy-token|preflight-token|verify-token|verify-legacy|acknowledge-token
 # Required environment: FM_HOME; token modes read their evidence from standard input.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -64,6 +64,9 @@ case "${1:-}" in
     printf '],"ownerEvidence":"%s"}\n' "$FM_WAKE_ACK_EVIDENCE_TOKEN"
     fm_wake_ack_evidence_clear
     ;;
+  legacy-token)
+    legacy_token
+    ;;
   preflight-token)
     token=$(read_token)
     fm_wake_ack_evidence_precondition "$token"
@@ -82,7 +85,7 @@ case "${1:-}" in
     fm_wake_ack_evidence_acknowledge "$token"
     ;;
   *)
-    printf 'usage: ack-evidence.sh capture-json|preflight-token|verify-token|verify-legacy|acknowledge-token\n' >&2
+    printf 'usage: ack-evidence.sh capture-json|legacy-token|preflight-token|verify-token|verify-legacy|acknowledge-token\n' >&2
     exit 2
     ;;
 esac

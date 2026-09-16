@@ -15,6 +15,7 @@ public sealed class NativeReceiptJournal : IDisposable {
     readonly Dictionary<string, Dictionary<string,object>> receipts = new Dictionary<string, Dictionary<string,object>>();
     readonly string home, generation;
     readonly NativeHomeLease lease;
+    object latestAcknowledgementEvidence;
     FileStream file;
     const long Limit = 16 * 1024 * 1024;
     [StructLayout(LayoutKind.Sequential)] struct Info {
@@ -22,6 +23,38 @@ public sealed class NativeReceiptJournal : IDisposable {
         public uint volume, sizeHigh, sizeLow, links, indexHigh, indexLow;
     }
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetFileInformationByHandle(IntPtr handle, out Info info);
+    NativeReceiptJournal(string selectedHome) {
+        home=Path.GetFullPath(selectedHome).TrimEnd('\\','/');
+    }
+    static void ValidateFile(FileStream stream,SecurityIdentifier user) {
+        var access=stream.GetAccessControl();
+        if(!access.AreAccessRulesProtected || !access.GetOwner(typeof(SecurityIdentifier)).Equals(user)) throw new IOException("Receipt journal security differs; preserved");
+        foreach(FileSystemAccessRule rule in access.GetAccessRules(true,true,typeof(SecurityIdentifier))) if(rule.AccessControlType==AccessControlType.Allow && !rule.IdentityReference.Equals(user)) throw new IOException("Receipt journal grants unexpected access; preserved");
+        Info info;
+        if(!GetFileInformationByHandle(stream.SafeFileHandle.DangerousGetHandle(),out info) || info.links!=1 || (info.attributes&0x400)!=0) throw new IOException("Receipt journal file identity is unsafe");
+    }
+    void Load(FileStream stream) {
+        if(stream.Length>Limit || stream.Length==0) throw new IOException("Receipt journal is empty or oversized; preserved");
+        string content;
+        stream.Position=0;
+        using(var reader=new StreamReader(stream,new UTF8Encoding(false,true),true,4096,true)) content=reader.ReadToEnd();
+        if(!content.EndsWith("\n",StringComparison.Ordinal)) throw new IOException("Interrupted receipt record; preserved");
+        foreach(string line in content.Split(new [] {'\n'},StringSplitOptions.RemoveEmptyEntries)) Apply(json.Deserialize<Dictionary<string,object>>(line));
+    }
+    public static object AdmissionEvidence(string selectedHome) {
+        string home=Path.GetFullPath(selectedHome).TrimEnd('\\','/'),name=Path.Combine(home,"owner-receipts.jsonl");
+        FileAttributes attributes;
+        try { attributes=File.GetAttributes(name); }
+        catch(FileNotFoundException) { return null; }
+        catch(DirectoryNotFoundException) { return null; }
+        if((attributes&FileAttributes.ReparsePoint)!=0 || (attributes&FileAttributes.Directory)!=0) throw new IOException("Receipt journal path is unsafe; preserved");
+        var parser=new NativeReceiptJournal(home);
+        using(var stream=new FileStream(name,FileMode.Open,FileAccess.Read,FileShare.ReadWrite)) {
+            ValidateFile(stream,WindowsIdentity.GetCurrent().User);
+            parser.Load(stream);
+        }
+        return parser.latestAcknowledgementEvidence;
+    }
     public NativeReceiptJournal(NativeHomeLease ownedLease, string ownerGeneration) {
         if(ownedLease==null || !ownedLease.IsHeld) throw new InvalidOperationException("An active native home lease is required");
         lease=ownedLease;
@@ -42,18 +75,8 @@ public sealed class NativeReceiptJournal : IDisposable {
                 if((File.GetAttributes(name)&FileAttributes.ReparsePoint)!=0) throw new IOException("Receipt journal is a reparse point");
                 file=new FileStream(name,FileMode.Open,FileSystemRights.Read|FileSystemRights.Write,FileShare.Read,4096,FileOptions.None,security);
             }
-            var access=file.GetAccessControl();
-            if(!access.AreAccessRulesProtected || !access.GetOwner(typeof(SecurityIdentifier)).Equals(user)) throw new IOException("Receipt journal security differs; preserved");
-            foreach(FileSystemAccessRule rule in access.GetAccessRules(true,true,typeof(SecurityIdentifier))) if(rule.AccessControlType==AccessControlType.Allow && !rule.IdentityReference.Equals(user)) throw new IOException("Receipt journal grants unexpected access; preserved");
-            Info info;
-            if(!GetFileInformationByHandle(file.SafeFileHandle.DangerousGetHandle(),out info) || info.links!=1 || (info.attributes&0x400)!=0) throw new IOException("Receipt journal file identity is unsafe");
-            if(file.Length>Limit || (!created && file.Length==0)) throw new IOException("Receipt journal is empty or oversized; preserved");
-            if(!created) {
-                string content;
-                using(var reader=new StreamReader(file,new UTF8Encoding(false,true),true,4096,true)) content=reader.ReadToEnd();
-                if(!content.EndsWith("\n",StringComparison.Ordinal)) throw new IOException("Interrupted receipt record; preserved");
-                foreach(string line in content.Split(new [] {'\n'},StringSplitOptions.RemoveEmptyEntries)) Apply(json.Deserialize<Dictionary<string,object>>(line));
-            }
+            ValidateFile(file,user);
+            if(!created) Load(file);
             Append("session",null,null);
         } catch { Dispose();throw; }
     }
@@ -136,6 +159,7 @@ public sealed class NativeReceiptJournal : IDisposable {
             if(!exists || (string)previous["event"]!="ack-started" || !row.ContainsKey("ackGeneration") || (string)row["ackGeneration"]!=(string)previous["generation"] || json.Serialize(previous["payload"])!=json.Serialize(row["payload"]) || Evidence(row)==null || json.Serialize(Evidence(previous))!=json.Serialize(Evidence(row))) throw new IOException("Invalid recovery transition; preserved");
         } else throw new IOException("Unknown receipt transition; preserved");
         receipts[id]=row;
+        if(kind=="ack-started" || kind=="acknowledged" || kind=="recovered-acknowledged") latestAcknowledgementEvidence=Evidence(row);
     }
     public void Dispose() { if(file!=null) { file.Dispose();file=null; } }
 }

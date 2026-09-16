@@ -25,6 +25,9 @@
 #   fm-inbox.sh ask  <question>...
 #   fm-inbox.sh list
 #   fm-inbox.sh drain [--ack <id>...]
+#   fm-inbox.sh native-admission-predicate <wake-queue>
+#          Internal read-only mode: print the owned row count; exit 1 for
+#          unrecognized state and 2 for invalid usage.
 #
 # Configuration. A region, a model id and an AWS profile name somebody's account
 # and somebody's choices, so this file carries no default for any of them. Each is
@@ -438,7 +441,11 @@ case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;
   list)   shift; cmd_list ;;
   drain)  shift; cmd_drain "$@" ;;
-  native-admission-predicate) shift; native_admission_predicate "$@" ;;
+  native-admission-predicate)
+    shift
+    [ "$#" -eq 1 ] || { printf 'usage: fm-inbox.sh native-admission-predicate <wake-queue>\n' >&2; exit 2; }
+    native_admission_predicate "$@"
+    ;;
   ''|-h|--help|help)
     # The whole header block, found rather than counted: everything after the
     # shebang up to the first line that is not a comment. A fixed line range

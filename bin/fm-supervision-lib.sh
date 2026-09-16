@@ -119,7 +119,8 @@ FM_SUP_RESIDUAL_ERROR=
 fm_supervision_residual_inputs_absent() {  # <state-dir>
   local state=$1 record count
   FM_SUP_RESIDUAL_ERROR=
-  for record in "$state"/*.check.sh "$state"/*.check-trust "$state"/*.turn-ended; do
+  for record in "$state"/*.check.sh "$state"/*.check-trust "$state"/*.turn-ended \
+    "$state/.afk" "$state/.afk-contract"; do
     if [ -e "$record" ] || [ -L "$record" ]; then
       FM_SUP_RESIDUAL_ERROR="supervision input is present at $record"
       return 1

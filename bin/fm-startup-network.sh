@@ -73,6 +73,9 @@
 #        fm-startup-network.sh wait [<seconds>]
 #          Block until the report is published, up to <seconds> (default 120).
 #          For operators and tests only; a session start never waits.
+#        fm-startup-network.sh native-admission-predicate <wake-queue>
+#          Internal read-only mode: print the owned row count; exit 1 for
+#          unrecognized state and 2 for invalid usage.
 #
 # STATE, all under this home's state/ and gitignored with it:
 #   .startup-network.status   key=value record - generation, lock_pid, state,
@@ -675,11 +678,14 @@ case "$MODE" in
   harvest) cmd_harvest "${HARVEST_PID:-}" ;;
   report) print_state; print_timings ;;
   wait) cmd_wait "${1:-120}" || exit $? ;;
-  native-admission-predicate) native_admission_predicate "${1:-}" ;;
+  native-admission-predicate)
+    [ "$#" -eq 1 ] || { printf 'usage: fm-startup-network.sh native-admission-predicate <wake-queue>\n' >&2; exit 2; }
+    native_admission_predicate "$1"
+    ;;
   -h|--help) usage ;;
   *)
     printf 'fm-startup-network: unknown mode: %s\n' "${MODE:-<none>}" >&2
-    printf 'usage: fm-startup-network.sh start|run|harvest|report|wait\n' >&2
+    printf 'usage: fm-startup-network.sh start|run|harvest|report|wait|native-admission-predicate\n' >&2
     exit 2
     ;;
 esac

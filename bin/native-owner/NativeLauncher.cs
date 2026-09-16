@@ -16,7 +16,7 @@ public static partial class NativeOwner {
         string home=Path.GetFullPath(selectedHome), node=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"nodejs\node.exe");
         string host=Path.Combine(CodeRoot,"bin","native-owner","codex-host.mjs");
         if(!File.Exists(node)||!File.Exists(host)) throw new IOException("Native Node or the code-owned host is missing");
-        EmptyFleet(home);
+        EmptyFleet(home,true);
         string session=Guid.NewGuid().ToString("N"),nonce=Guid.NewGuid().ToString("N"),pipeName="fm-native-"+session;
         IntPtr job=CreateJobObject(IntPtr.Zero,null),env=IntPtr.Zero,output=IntPtr.Zero,input=IntPtr.Zero;
         if(job==IntPtr.Zero) throw Error("Create session job");
@@ -123,7 +123,7 @@ public static partial class NativeOwner {
     }
     static int FixedOperation(string purpose) {
         if(purpose!="startup"&&purpose!="check"&&purpose!="ack")throw new ArgumentException("Unknown fixed operation");
-        string home=Environment.GetEnvironmentVariable("FM_HOME");EmptyFleet(home);
+        string home=Environment.GetEnvironmentVariable("FM_HOME");EmptyFleet(home,false);
         if(OwnerClient(purpose=="startup" ? "identity" : "owns",Path.Combine(home,"state"),"")!=0)throw new InvalidOperationException("Operation is not registered");
         string script=Path.Combine(CodeRoot,"bin","native-owner",purpose+".sh");
         using(var process=Process.Start(BashHelper(script,"",home,true))) {
