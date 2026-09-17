@@ -177,6 +177,8 @@ try {
 }
 const completedRestart=start(completedHome);await ready(completedRestart,completedReady.owner.generation);completedRestart.child.stdin.end();assert.equal((await bound(completedRestart.done,completedRestart,20000)).exit,0);
 records.push('notification publication transitions and completed acknowledgements remain admissible across restart');
+// Later scenarios must not inherit the publication-only continuation wait.
+fs.writeFileSync(hostScript,"import {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[]}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
 const wakeLib=path.join(code,'bin/fm-wake-lib.sh'),wakeLibActual=wakeLib+'.actual';
 fs.renameSync(wakeLib,wakeLibActual);fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fm-wake-lib-interrupt.sh'),wakeLib);
 const interruptedHome=path.join(area,'interrupted-ack-restart'),interruptedNote=enqueue(interruptedHome,'Preserve this interrupted acknowledgement for reconciliation.');
