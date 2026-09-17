@@ -34,16 +34,21 @@ public static partial class NativeOwner {
     static void OwnerAdmission(string home,bool launch,string[] provenDeadGenerations) {
         string script=Path.Combine(CodeRoot,"bin","native-owner","admit.sh");
         object evidence=NativeReceiptJournal.AdmissionEvidence(home);
-        var start=BashHelper(script,launch ? "launch" : "owned-operation",home);start.RedirectStandardInput=true;start.RedirectStandardError=true;
-        if(launch && provenDeadGenerations!=null && provenDeadGenerations.Length>0)start.EnvironmentVariables["FM_NATIVE_PROVEN_DEAD_GENERATIONS"]=string.Join(",",provenDeadGenerations);
         string input="";
-        if(evidence is string) {start.EnvironmentVariables["FM_NATIVE_ACK_EVIDENCE_KIND"]="token";input=(string)evidence;}
-        else if(evidence!=null) {start.EnvironmentVariables["FM_NATIVE_ACK_EVIDENCE_KIND"]="legacy";input=Json.Serialize(evidence);}
-        using(var process=Process.Start(start)) {
-            var error=process.StandardError.ReadToEndAsync();
-            process.StandardInput.Write(input);process.StandardInput.Close();
-            if(!process.WaitForExit(30000)){process.Kill();throw new TimeoutException("The empty-fleet owner preflight exceeded its bound");}
-            if(process.ExitCode!=0)throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing records were preserved: "+error.Result.Trim());
+        DateTime retryUntil=DateTime.UtcNow.AddSeconds(3);
+        while(true) {
+            var start=BashHelper(script,launch ? "launch" : "owned-operation",home);start.RedirectStandardInput=true;start.RedirectStandardError=true;
+            if(launch && provenDeadGenerations!=null && provenDeadGenerations.Length>0)start.EnvironmentVariables["FM_NATIVE_PROVEN_DEAD_GENERATIONS"]=string.Join(",",provenDeadGenerations);
+            if(evidence is string) {start.EnvironmentVariables["FM_NATIVE_ACK_EVIDENCE_KIND"]="token";input=(string)evidence;}
+            else if(evidence!=null) {start.EnvironmentVariables["FM_NATIVE_ACK_EVIDENCE_KIND"]="legacy";input=Json.Serialize(evidence);}
+            using(var process=Process.Start(start)) {
+                var error=process.StandardError.ReadToEndAsync();
+                process.StandardInput.Write(input);process.StandardInput.Close();
+                if(!process.WaitForExit(30000)){process.Kill();throw new TimeoutException("The empty-fleet owner preflight exceeded its bound");}
+                if(process.ExitCode==0)return;
+                if(launch || DateTime.UtcNow>=retryUntil)throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing records were preserved: "+error.Result.Trim());
+            }
+            System.Threading.Thread.Sleep(100);
         }
     }
     internal static void EmptyFleet(string home,bool launch,string[] provenDeadGenerations=null) {

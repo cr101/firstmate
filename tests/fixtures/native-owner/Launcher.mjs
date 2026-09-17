@@ -75,6 +75,11 @@ function appendStartupWake(home,state){
  const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export FM_ROOT_OVERRIDE FM_STATE_OVERRIDE; FM_ROOT_OVERRIDE=$(cygpath -u "$1"); FM_STATE_OVERRIDE=$(cygpath -u "$3"); . "$FM_ROOT_OVERRIDE/bin/fm-wake-lib.sh"; fm_wake_append_startup_network "$2"','startup-wake',code,state,path.join(home,'state')],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
 }
+function appendInboxWake(home,id,summary){
+ const env={...process.env,FM_HOME:home,MSYS:'winsymlinks:nativestrict'};
+ const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export FM_ROOT_OVERRIDE FM_STATE_OVERRIDE; FM_ROOT_OVERRIDE=$(cygpath -u "$1"); FM_STATE_OVERRIDE=$(cygpath -u "$4"); . "$FM_ROOT_OVERRIDE/bin/fm-wake-lib.sh"; fm_wake_append check "inbox:$2" "check: captain inbox note $2 - $3"','inbox-wake',code,id,summary,path.join(home,'state')],{env,encoding:'utf8',timeout:30000});
+ assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
+}
 const journalRows=home=>fs.readFileSync(path.join(home,'owner-receipts.jsonl'),'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
 const home=path.join(area,'home');fs.mkdirSync(path.join(home,'data'),{recursive:true});
 fs.writeFileSync(path.join(home,'data/backlog.md'),'## In flight\n\n## Queued\n\n## Done\n');
@@ -152,13 +157,19 @@ assert(fs.readFileSync(path.join(historicalState,'.wake-queue'),'utf8').includes
 records.push('queued startup failure survives a newer startup status and remains admissible');
 const hostScript=path.join(code,'bin/native-owner/codex-host.mjs'),hostSource=fs.readFileSync(hostScript,'utf8');
 fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fake-app-server.mjs'),path.join(code,'bin/native-owner/fake-app-server.mjs'));
-fs.writeFileSync(hostScript,"import {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[]}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
+fs.writeFileSync(hostScript,"import fs from 'node:fs';\nimport path from 'node:path';\nimport {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\nconst pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[],afterAutomaticTurn:async ({evidence})=>{if(evidence.automatic.length===1){fs.writeFileSync(path.join(process.env.FM_PROBE_HOME,'first-automatic-complete'),'ready');while(!fs.existsSync(path.join(process.env.FM_PROBE_HOME,'continue-after-first')))await pause(20);}}}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
 const completedHome=path.join(area,'completed-ack-restart'),completedNote=enqueue(completedHome,'Complete this controlled acknowledgement before restart.');
 const completedSession=start(completedHome,false);const completedReady=await ready(completedSession);
-await waitUntil(completedSession,'completed acknowledgement',()=>journalRows(completedHome).at(-1)?.event==='acknowledged'&&fs.existsSync(path.join(completedHome,'state/inbox/handled',completedNote+'.note'))&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()==='');
+await waitUntil(completedSession,'completed acknowledgement',()=>journalRows(completedHome).at(-1)?.event==='acknowledged'&&fs.existsSync(path.join(completedHome,'state/inbox/handled',completedNote+'.note'))&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()===''&&fs.existsSync(path.join(completedReady.runtime,'first-automatic-complete')));
+const transitionNote='transition-note',transitionMessage='Complete this notification after its producer finishes publishing.';
+fs.writeFileSync(path.join(completedHome,'state/inbox',transitionNote+'.note'),`id=${transitionNote}\nat=2026-09-18T00:00:00Z\nsource=text\n--\n${transitionMessage}\n`);
+fs.writeFileSync(path.join(completedReady.runtime,'continue-after-first'),'continue');
+await sleep(1000);
+appendInboxWake(completedHome,transitionNote,transitionMessage);
+await waitUntil(completedSession,'notification publication transition',()=>journalRows(completedHome).filter(row=>row.event==='acknowledged').length===2&&fs.existsSync(path.join(completedHome,'state/inbox/handled',transitionNote+'.note'))&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()==='',60000);
 completedSession.child.stdin.write('/quit\n');assert.equal((await bound(completedSession.done,completedSession,20000)).exit,0);
 const completedRestart=start(completedHome);await ready(completedRestart,completedReady.owner.generation);completedRestart.child.stdin.end();assert.equal((await bound(completedRestart.done,completedRestart,20000)).exit,0);
-records.push('journal-correlated completed acknowledgement remains admissible across restart');
+records.push('notification publication transitions and completed acknowledgements remain admissible across restart');
 const wakeLib=path.join(code,'bin/fm-wake-lib.sh'),wakeLibActual=wakeLib+'.actual';
 fs.renameSync(wakeLib,wakeLibActual);fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fm-wake-lib-interrupt.sh'),wakeLib);
 const interruptedHome=path.join(area,'interrupted-ack-restart'),interruptedNote=enqueue(interruptedHome,'Preserve this interrupted acknowledgement for reconciliation.');
