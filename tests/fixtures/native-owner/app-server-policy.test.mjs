@@ -30,7 +30,7 @@ test('isolated app-server arguments disable every inherited external capability'
 test('the fake request boundary observes a fully isolated effective catalog',async()=>{
  const boundary=requestBoundary({
   'config/read':{config:{features:{apps:false,plugins:false},mcp_servers:{alpha:{enabled:false}}}},
-  'app/installed':{apps:[]},
+  'app/installed':{apps:[{id:'policy-disabled-app',runtimeName:'Policy Disabled App',enabled:false,callable:false}]},
   'mcpServerStatus/list':{data:[],nextCursor:null},
  });
  const configuration=await verifyExternalToolConfiguration(boundary.request,['alpha']);

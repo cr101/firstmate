@@ -104,7 +104,7 @@ export async function verifyExternalToolIsolation(request,threadId,configuration
  const activeMcpServers=mcpServers.filter(server=>MCP_RUNTIME_STATUS_ACTIVE.get(server.runtimeStatus)||server.serverInfo!=null||server.toolsError!=null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
  const result={
   ...configuration,
-  exposedApps:apps.map(app=>app.id),
+  exposedApps:apps.filter(app=>app.enabled||app.callable).map(app=>app.id),
   activeMcpServers:activeMcpServers.map(server=>server.name),
  };
  if(result.exposedApps.length||result.activeMcpServers.length)throw Error('External app-server tools are not isolated: '+JSON.stringify(result));

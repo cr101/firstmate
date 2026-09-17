@@ -41,6 +41,7 @@ public static class ReceiptTests {
         Directory.CreateDirectory(Path.GetDirectoryName(Handled(lease)));
         File.WriteAllText(Path.Combine(lease.Home,"state","inbox",note+".note"),"original captured inbox record\n");
         File.WriteAllText(Queue(lease),"1\t1\tcheck\tinbox:"+note+"\tcaptain inbox note\n");
+        File.WriteAllText(Path.Combine(lease.Home,"state",".wake-queue.seq"),"1\n");
         File.WriteAllText(Path.Combine(lease.Home,"state",".main-eligible-rows"),"1\n");
         File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:"+generation+"\n");
     }
