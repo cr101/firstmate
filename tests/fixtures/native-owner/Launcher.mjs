@@ -64,8 +64,8 @@ function enqueue(home,message){
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));return result.stdout.trim().split(/\s+/)[1];
 }
 function appendStartupWake(home,state){
- const env={...process.env,FM_HOME:home,FM_ROOT_OVERRIDE:posix(code),MSYS:'winsymlinks:nativestrict'};
- const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export FM_STATE_OVERRIDE; FM_STATE_OVERRIDE=$(cygpath -u "$3"); . "$1/bin/fm-wake-lib.sh"; fm_wake_append_startup_network "$2"','startup-wake',posix(code),state,path.join(home,'state')],{env,encoding:'utf8',timeout:30000});
+ const env={...process.env,FM_HOME:home,MSYS:'winsymlinks:nativestrict'};
+ const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export FM_ROOT_OVERRIDE FM_STATE_OVERRIDE; FM_ROOT_OVERRIDE=$(cygpath -u "$1"); FM_STATE_OVERRIDE=$(cygpath -u "$3"); . "$FM_ROOT_OVERRIDE/bin/fm-wake-lib.sh"; fm_wake_append_startup_network "$2"','startup-wake',code,state,path.join(home,'state')],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
 }
 const journalRows=home=>fs.readFileSync(path.join(home,'owner-receipts.jsonl'),'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
