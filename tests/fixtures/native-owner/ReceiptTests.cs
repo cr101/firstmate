@@ -33,12 +33,12 @@ public static class ReceiptTests {
     static string CompletionHistory(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".watcher-down.ack-completions"); }
     static string Pending(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","note-id.note"); }
     static string Handled(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","handled","note-id.note"); }
-    static void Targets(NativeHomeLease lease) {
+    static void Targets(NativeHomeLease lease,string note="note-id",string generation="recovery") {
         Directory.CreateDirectory(Path.GetDirectoryName(Handled(lease)));
-        File.WriteAllText(Pending(lease),"original captured inbox record\n");
-        File.WriteAllText(Queue(lease),"1\t1\tcheck\tinbox:note-id\tcaptain inbox note\n");
+        File.WriteAllText(Path.Combine(lease.Home,"state","inbox",note+".note"),"original captured inbox record\n");
+        File.WriteAllText(Queue(lease),"1\t1\tcheck\tinbox:"+note+"\tcaptain inbox note\n");
         File.WriteAllText(Path.Combine(lease.Home,"state",".main-eligible-rows"),"1\n");
-        File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:recovery\n");
+        File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:"+generation+"\n");
     }
     static string ZeroRecovery(NativeHomeLease lease,string action,string generation=null) {
         string script=Path.Combine(NativeOwner.CodeRoot,"tests","fixtures","native-owner","zero-recovery.sh");
@@ -57,7 +57,7 @@ public static class ReceiptTests {
         using(var process=Process.Start(start)) {
             var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
             if(!process.WaitForExit(30000)){process.Kill();throw new IOException("Acknowledgement target fixture exceeded its bound");}
-            if(process.ExitCode!=0)throw new IOException("Acknowledgement target fixture failed: "+error.Result);
+            if(process.ExitCode!=0)throw new IOException("Acknowledgement target fixture exited "+process.ExitCode+": "+error.Result+output.Result);
             var payload=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(output.Result);
             payload["challenge"]=challenge;payload["message"]="pending notification";
             return payload;
@@ -138,7 +138,7 @@ public static class ReceiptTests {
             Targets(lease);
             using(var journal=new NativeReceiptJournal(lease,A)) {
                 var firstDelivery=journal.Present(OwnerPayload(lease,"first"));string first=(string)firstDelivery["receipt"];
-                Acknowledge(lease,journal,firstDelivery,"first");Targets(lease);File.WriteAllText(Path.Combine(lease.Home,"state",".watcher-down"),"pending:handling:recovery-second\n");
+                Acknowledge(lease,journal,firstDelivery,"first");Targets(lease,"second-note","recovery-second");
                 var secondDelivery=journal.Present(OwnerPayload(lease,"second"));string second=(string)secondDelivery["receipt"];
                 Refuses(()=>journal.BeginAcknowledgement(first,"first"),"Earlier cycle replay accepted");
                 Acknowledge(lease,journal,secondDelivery,"second");

@@ -19,6 +19,7 @@ The Windows path to the temporary operational home.
 An existing local Docker image containing jq and GNU timeout. No image is pulled.
 Read-only helper containers self-expire even if their native client is stopped.
 #>
+[CmdletBinding(PositionalBinding=$false)]
 param([switch]$Experimental,[switch]$BuildOnly,[switch]$VerifyOnly,[string]$OperationalHome,[string]$JqImage)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
