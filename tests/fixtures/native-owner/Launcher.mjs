@@ -180,9 +180,10 @@ fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maske
 const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);
 assert.equal(fs.readFileSync(maskedStatus,'utf8'),'preserve masked residual state');assert.equal(fs.existsSync(path.join(maskedHome,'owner-probe.json')),false);
 records.push('ambient Bash startup hooks cannot bypass admission before lease acquisition');
-const customHome=path.join(area,'registered-custom'),customState=path.join(customHome,'state'),canary=path.join(customHome,'executed');
-fs.mkdirSync(customState,{recursive:true});fs.writeFileSync(path.join(customState,'custom.check.sh'),`#!/usr/bin/env bash\nprintf executed > "${posix(canary)}"\n`);
-fs.chmodSync(path.join(customState,'custom.check.sh'),0o700);
+const customHome=path.join(area,'registered-custom'),customState=path.join(customHome,'state'),customCheck=path.join(customState,'custom.check.sh'),canary=path.join(customHome,'executed');
+fs.mkdirSync(customState,{recursive:true});fs.writeFileSync(customCheck,`#!/usr/bin/env bash\nprintf executed > "${posix(canary)}"\n`);
+const chmod=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','chmod 0700 -- "$1"','custom-check-mode',posix(customCheck)],{env:{...process.env,MSYS:'winsymlinks:nativestrict'},encoding:'utf8',timeout:30000});
+assert.equal(chmod.status,0,chmod.stderr);
 const register=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(code,'bin/fm-check-register.sh')),'custom'],{env:{...process.env,FM_HOME:posix(customHome),MSYS:'winsymlinks:nativestrict'},encoding:'utf8',timeout:30000});
 assert.equal(register.status,0,register.stderr);
 const custom=start(customHome);custom.child.stdin.end();assert.notEqual((await bound(custom.done,custom,20000)).exit,0);
