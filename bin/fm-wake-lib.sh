@@ -2677,7 +2677,7 @@ fm_wake_ack_evidence_acknowledge() {  # <opaque-token>
     [ -n "$id" ] && notes+=("$id")
   done < "$FM_WAKE_ACK_EVIDENCE_NOTES"
   if [ "${#notes[@]}" -gt 0 ]; then
-    "$FM_WAKE_LIB_DIR/fm-inbox.sh" drain --ack "${notes[@]}" || { fm_wake_ack_evidence_clear; return 1; }
+    "$FM_WAKE_LIB_DIR/fm-inbox.sh" drain --ack "${notes[@]}" >/dev/null || { fm_wake_ack_evidence_clear; return 1; }
   fi
   "$FM_WAKE_LIB_DIR/fm-wake-drain.sh" --ack-through "$FM_WAKE_ACK_EVIDENCE_CUTOFF" \
     --recovery-generation "$FM_WAKE_ACK_EVIDENCE_GENERATION" || { fm_wake_ack_evidence_clear; return 1; }
