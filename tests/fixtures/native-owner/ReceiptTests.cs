@@ -33,6 +33,10 @@ public static class ReceiptTests {
     static string CompletionHistory(NativeHomeLease lease) { return Path.Combine(lease.Home,"state",".watcher-down.ack-completions"); }
     static string Pending(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","note-id.note"); }
     static string Handled(NativeHomeLease lease) { return Path.Combine(lease.Home,"state","inbox","handled","note-id.note"); }
+    static string ReadJournal(NativeHomeLease lease) {
+        using(var stream=new FileStream(Path.Combine(lease.Home,"owner-receipts.jsonl"),FileMode.Open,FileAccess.Read,FileShare.ReadWrite))
+        using(var reader=new StreamReader(stream,Encoding.UTF8,true)) return reader.ReadToEnd();
+    }
     static void Targets(NativeHomeLease lease,string note="note-id",string generation="recovery") {
         Directory.CreateDirectory(Path.GetDirectoryName(Handled(lease)));
         File.WriteAllText(Path.Combine(lease.Home,"state","inbox",note+".note"),"original captured inbox record\n");
@@ -149,13 +153,13 @@ public static class ReceiptTests {
             using(var journal=new NativeReceiptJournal(lease,A)) {
                 var delivery=journal.Present(OwnerPayload(lease,"first"));string receipt=(string)delivery["receipt"],evidence=(string)delivery["ownerEvidence"];
                 journal.BeginAcknowledgement(receipt,"first",NativeAcknowledgementEvidence.Capture(lease,delivery));
-                string before=File.ReadAllText(Path.Combine(lease.Home,"owner-receipts.jsonl"));
+                string before=ReadJournal(lease);
                 Refuses(()=>journal.CompleteAcknowledgement(receipt,null),"Missing zero-exit response completed an acknowledgement");
                 Refuses(()=>journal.CompleteAcknowledgement(receipt,"{broken"),"Malformed zero-exit response completed an acknowledgement");
                 Refuses(()=>journal.CompleteAcknowledgement(receipt,Json.Serialize(new Dictionary<string,object>{{"acknowledged",true},{"ownerEvidence","mismatch"}})),"Mismatched zero-exit response completed an acknowledgement");
                 Refuses(()=>journal.CompleteAcknowledgement(receipt,Json.Serialize(new Dictionary<string,object>{{"acknowledged",false},{"ownerEvidence",evidence}})),"Negative zero-exit response completed an acknowledgement");
                 Refuses(()=>journal.CompleteAcknowledgement(receipt,Completion(delivery)),"Unperformed effect completed from response data alone");
-                Expect(before==File.ReadAllText(Path.Combine(lease.Home,"owner-receipts.jsonl")),"Rejected completion response changed the journal");
+                Expect(before==ReadJournal(lease),"Rejected completion response changed the journal");
                 OwnerAcknowledge(lease,delivery);journal.CompleteAcknowledgement(receipt,Completion(delivery));
                 Expect(!journal.NeedsReconciliation,"Affirmatively proven completion remained unresolved");
             }

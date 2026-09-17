@@ -14,7 +14,7 @@ function requestBoundary(responses) {
 }
 
 function inactiveMcpServer(name) {
- return {name,runtimeStatus:null,pluginId:null,serverInfo:null,serverCapabilities:null,tools:{},toolsError:null,resources:[],resourceTemplates:[],authStatus:'unknown'};
+ return {name,tools:{},resources:[],resourceTemplates:[],authStatus:'unknown'};
 }
 
 const isolatedConfiguration={appsFeatureEnabled:false,pluginsFeatureEnabled:false,configuredMcpServers:['alpha'],enabledMcpServers:[]};
@@ -87,7 +87,7 @@ test('supported runtime statuses have explicit activity semantics',async()=>{
 
 test('disabled status is inactive only when the complete response exposes nothing',async()=>{
  for(const exposed of [
-  {serverInfo:{}},{serverCapabilities:{}},{toolsError:'failed to enumerate'}, {tools:{read:{}}}, {resources:[{}]}, {resourceTemplates:[{}]},
+  {serverInfo:{}},{toolsError:'failed to enumerate'}, {tools:{read:{}}}, {resources:[{}]}, {resourceTemplates:[{}]},
  ]){
   const server={...inactiveMcpServer('disabled'),runtimeStatus:'disabled',...exposed};
   const boundary=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[server],nextCursor:null}});
@@ -95,16 +95,8 @@ test('disabled status is inactive only when the complete response exposes nothin
  }
 });
 
-test('server capabilities are required',async()=>{
- const missing=inactiveMcpServer('missing');delete missing.serverCapabilities;
- const absent=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[missing],nextCursor:null}});
- await assert.rejects(verifyExternalToolIsolation(absent.request,'thread-1',isolatedConfiguration),/Invalid MCP server status response/);
- const exposed=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[{...inactiveMcpServer('active'),serverCapabilities:{tools:{}}}],nextCursor:null}});
- await assert.rejects(verifyExternalToolIsolation(exposed.request,'thread-1',isolatedConfiguration),/External app-server tools are not isolated/);
-});
-
-test('valid empty and multi-page catalogs are accepted',async()=>{
- const empty=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[],nextCursor:null}});
+test('valid empty and protocol-optional-field catalogs are accepted',async()=>{
+ const empty=requestBoundary({'app/installed':{apps:[]},'mcpServerStatus/list':{data:[]}});
  assert.deepEqual((await verifyExternalToolIsolation(empty.request,'thread-1',isolatedConfiguration)).activeMcpServers,[]);
  const pages=new Map([
   [null,{data:[inactiveMcpServer('alpha')],nextCursor:'page-2'}],

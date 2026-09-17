@@ -22,11 +22,10 @@ function validInstalledApp(value) {
 
 function validMcpServerStatus(value) {
  return isRecord(value)&&typeof value.name==='string'&&
-  MCP_RUNTIME_STATUS_ACTIVE.has(value.runtimeStatus)&&
-  (value.pluginId===null||typeof value.pluginId==='string')&&
-  (value.serverInfo===null||isRecord(value.serverInfo))&&
-  (value.serverCapabilities===null||isRecord(value.serverCapabilities))&&
-  isRecord(value.tools)&&(value.toolsError===null||typeof value.toolsError==='string')&&
+  (value.runtimeStatus===undefined||MCP_RUNTIME_STATUS_ACTIVE.has(value.runtimeStatus))&&
+  (value.pluginId==null||typeof value.pluginId==='string')&&
+  (value.serverInfo==null||isRecord(value.serverInfo))&&
+  isRecord(value.tools)&&(value.toolsError==null||typeof value.toolsError==='string')&&
   Array.isArray(value.resources)&&Array.isArray(value.resourceTemplates)&&
   ['unknown','unsupported','notLoggedIn','bearerToken','oAuth'].includes(value.authStatus);
 }
@@ -36,9 +35,9 @@ async function readMcpServerStatuses(request) {
  let cursor=null;
  for(let page=0;page<MAX_MCP_STATUS_PAGES;page++){
   const response=await request('mcpServerStatus/list',{cursor,limit:100,detail:'toolsAndAuthOnly'});
-  if(!isRecord(response)||!Array.isArray(response.data)||response.data.some(status=>!validMcpServerStatus(status))||(response.nextCursor!==null&&typeof response.nextCursor!=='string'))throw Error('Invalid MCP server status response');
+  if(!isRecord(response)||!Array.isArray(response.data)||response.data.some(status=>!validMcpServerStatus(status))||(response.nextCursor!=null&&typeof response.nextCursor!=='string'))throw Error('Invalid MCP server status response');
   statuses.push(...response.data);
-  if(response.nextCursor===null)return statuses;
+  if(response.nextCursor==null)return statuses;
   if(seenCursors.has(response.nextCursor))throw Error('Repeated MCP server status cursor');
   seenCursors.add(response.nextCursor);
   cursor=response.nextCursor;
@@ -102,7 +101,7 @@ export async function verifyExternalToolIsolation(request,threadId,configuration
  if(!isRecord(installed)||!Array.isArray(installed.apps)||installed.apps.some(app=>!validInstalledApp(app)))throw Error('Invalid installed app catalog response');
  const apps=installed.apps;
  const mcpServers=await readMcpServerStatuses(request);
- const activeMcpServers=mcpServers.filter(server=>MCP_RUNTIME_STATUS_ACTIVE.get(server.runtimeStatus)||server.serverInfo!==null||server.serverCapabilities!==null||server.toolsError!==null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
+ const activeMcpServers=mcpServers.filter(server=>MCP_RUNTIME_STATUS_ACTIVE.get(server.runtimeStatus)||server.serverInfo!=null||server.toolsError!=null||Object.keys(server.tools).length||server.resources.length||server.resourceTemplates.length);
  const result={
   ...configuration,
   exposedApps:apps.map(app=>app.id),
