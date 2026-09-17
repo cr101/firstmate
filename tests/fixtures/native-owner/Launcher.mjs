@@ -81,6 +81,8 @@ function appendInboxWake(home,id,summary){
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
 }
 const journalRows=home=>fs.readFileSync(path.join(home,'owner-receipts.jsonl'),'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
+const acknowledgedNote=(home,note)=>journalRows(home).some(row=>row.event==='acknowledged'&&Array.isArray(row.payload?.notes)&&row.payload.notes.includes(note));
+const pendingNote=(home,note)=>fs.readFileSync(path.join(home,'state/.wake-queue'),'utf8').split(/\r?\n/).filter(Boolean).some(row=>row.split('\t')[3]===`inbox:${note}`);
 const home=path.join(area,'home');fs.mkdirSync(path.join(home,'data'),{recursive:true});
 fs.writeFileSync(path.join(home,'data/backlog.md'),'## In flight\n\n## Queued\n\n## Done\n');
 const first=start(home);const initial=await ready(first);console.error('first ready',area);
@@ -159,15 +161,20 @@ const hostScript=path.join(code,'bin/native-owner/codex-host.mjs'),hostSource=fs
 fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fake-app-server.mjs'),path.join(code,'bin/native-owner/fake-app-server.mjs'));
 fs.writeFileSync(hostScript,"import fs from 'node:fs';\nimport path from 'node:path';\nimport {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\nconst pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[],afterAutomaticTurn:async ({evidence})=>{if(evidence.automatic.length===1){fs.writeFileSync(path.join(process.env.FM_PROBE_HOME,'first-automatic-complete'),'ready');while(!fs.existsSync(path.join(process.env.FM_PROBE_HOME,'continue-after-first')))await pause(20);}}}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
 const completedHome=path.join(area,'completed-ack-restart'),completedNote=enqueue(completedHome,'Complete this controlled acknowledgement before restart.');
-const completedSession=start(completedHome,false);const completedReady=await ready(completedSession);
-await waitUntil(completedSession,'completed acknowledgement',()=>journalRows(completedHome).at(-1)?.event==='acknowledged'&&fs.existsSync(path.join(completedHome,'state/inbox/handled',completedNote+'.note'))&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()===''&&fs.existsSync(path.join(completedReady.runtime,'first-automatic-complete')));
-const transitionNote='transition-note',transitionMessage='Complete this notification after its producer finishes publishing.';
-fs.writeFileSync(path.join(completedHome,'state/inbox',transitionNote+'.note'),`id=${transitionNote}\nat=2026-09-18T00:00:00Z\nsource=text\n--\n${transitionMessage}\n`);
-fs.writeFileSync(path.join(completedReady.runtime,'continue-after-first'),'continue');
-await sleep(1000);
-appendInboxWake(completedHome,transitionNote,transitionMessage);
-await waitUntil(completedSession,'notification publication transition',()=>journalRows(completedHome).filter(row=>row.event==='acknowledged').length===2&&fs.existsSync(path.join(completedHome,'state/inbox/handled',transitionNote+'.note'))&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()==='',60000);
-completedSession.child.stdin.write('/quit\n');assert.equal((await bound(completedSession.done,completedSession,20000)).exit,0);
+const completedSession=start(completedHome,false);let completedReady;
+try {
+ completedReady=await ready(completedSession);
+ await waitUntil(completedSession,'completed acknowledgement',()=>acknowledgedNote(completedHome,completedNote)&&fs.existsSync(path.join(completedHome,'state/inbox/handled',completedNote+'.note'))&&!pendingNote(completedHome,completedNote)&&fs.existsSync(path.join(completedReady.runtime,'first-automatic-complete')));
+ const transitionNote='transition-note',transitionMessage='Complete this notification after its producer finishes publishing.';
+ fs.writeFileSync(path.join(completedHome,'state/inbox',transitionNote+'.note'),`id=${transitionNote}\nat=2026-09-18T00:00:00Z\nsource=text\n--\n${transitionMessage}\n`);
+ fs.writeFileSync(path.join(completedReady.runtime,'continue-after-first'),'continue');
+ await sleep(1000);
+ appendInboxWake(completedHome,transitionNote,transitionMessage);
+ await waitUntil(completedSession,'notification publication transition',()=>acknowledgedNote(completedHome,transitionNote)&&fs.existsSync(path.join(completedHome,'state/inbox/handled',transitionNote+'.note'))&&!pendingNote(completedHome,transitionNote)&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()==='',60000);
+ completedSession.child.stdin.write('/quit\n');assert.equal((await bound(completedSession.done,completedSession,20000)).exit,0);
+}finally{
+ if(completedSession.child.exitCode===null){completedSession.child.stdin.write('/quit\n');if(completedReady)fs.writeFileSync(path.join(completedReady.runtime,'continue-after-first'),'continue');const stopped=await bound(completedSession.done,completedSession,20000);assert.equal(stopped.exit,0,stopped.stderr);}
+}
 const completedRestart=start(completedHome);await ready(completedRestart,completedReady.owner.generation);completedRestart.child.stdin.end();assert.equal((await bound(completedRestart.done,completedRestart,20000)).exit,0);
 records.push('notification publication transitions and completed acknowledgements remain admissible across restart');
 const wakeLib=path.join(code,'bin/fm-wake-lib.sh'),wakeLibActual=wakeLib+'.actual';

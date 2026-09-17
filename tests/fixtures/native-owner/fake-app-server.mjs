@@ -13,7 +13,7 @@ export function createFakeAppServer(scenario){
  };
  const fail=error=>{server.stderr.write(error.message+'\n');server.emit('error',error);finish();};
  const send=value=>server.stdout.write(JSON.stringify(value)+'\n');
- const thread='primary',turn='automatic-turn';
+ const thread='primary';let turn='',turnNumber=0;
  const complete=()=>send({method:'turn/completed',params:{threadId:thread,turn:{id:turn,status:'completed'}}});
  const call=(id,tool,args,overrides={})=>send({id,method:'item/tool/call',params:{threadId:thread,turnId:turn,callId:'call-'+id,namespace:null,tool,arguments:args,...overrides}});
  const lines=createInterface({input});
@@ -37,6 +37,7 @@ export function createFakeAppServer(scenario){
    if(frame.method==='app/installed'){send({id:frame.id,result:{apps:[]}});return;}
    if(frame.method==='mcpServerStatus/list'){send({id:frame.id,result:{data:[],nextCursor:null}});return;}
    if(frame.method==='turn/start'){
+    turn='automatic-turn-'+(++turnNumber);
     send({id:frame.id,result:{turn:{id:turn}}});
     queueMicrotask(()=>{
      if(scenario==='prose')complete();

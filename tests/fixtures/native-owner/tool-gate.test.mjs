@@ -114,7 +114,7 @@ test('operation failure is not reported as success and cannot be blindly retried
   assert.equal((await gate.handle(check())).success,false);assert.equal((await gate.handle(check({callId:'retry'}))).success,false);assert.equal(calls.length,1);
 });
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
-async function hostScenario(scenario){
+async function hostScenario(scenario,cycles=1){
  const area=fs.mkdtempSync(path.join(os.tmpdir(),'fm-native-host-loop-'));
  const runtime=path.join(area,'runtime'),home=path.join(area,'home');
  fs.mkdirSync(runtime,{recursive:true});fs.mkdirSync(home,{recursive:true});
@@ -122,17 +122,17 @@ async function hostScenario(scenario){
  fs.writeFileSync(path.join(runtime,'startup.log'),'deterministic startup digest\n');
  fs.writeFileSync(path.join(runtime,'startup.finished'),'finished\n');
  const input=new PassThrough(),output=new PassThrough(),error=new PassThrough();
- const notification={receipt:'receipt',challenge:'observed',message:'Controlled message',checkpointExit:124};
- let ackPending=false,acknowledgements=0,shutdowns=0,afterShutdown=0;
+ const notification=cycle=>({receipt:cycle===0?'receipt':`receipt-${cycle+1}`,challenge:'observed',message:'Controlled message',checkpointExit:124});
+ let cycle=0,ackPending=false,acknowledgements=0,shutdowns=0,afterShutdown=0;
  const native=async(action,extra)=>{
   if(shutdowns&&action!=='shutdown')afterShutdown++;
   if(action==='status')return {operationState:'ready'};
   if(action==='result'){
-   if(ackPending){ackPending=false;return {operationState:'acknowledged'};}
-   return {operationState:'delivered',notification};
+   if(ackPending){ackPending=false;cycle++;return {operationState:'acknowledged'};}
+   return {operationState:'delivered',notification:notification(Math.min(cycle,cycles-1))};
   }
   if(action==='ack'){
-   assert.deepEqual(extra,{receipt:'receipt',observed:'observed'});
+   assert.deepEqual(extra,{receipt:notification(cycle).receipt,observed:'observed'});
    acknowledgements++;ackPending=true;return {operationState:'pending'};
   }
   if(action==='shutdown'){shutdowns++;return {operationState:'stopped',reconciliationRequired:false};}
@@ -143,8 +143,8 @@ async function hostScenario(scenario){
   result=await runCodexHost({
    env:{...process.env,FM_PROBE_HOME:runtime,FM_PROBE_CODE_ROOT:repo,FM_HOME:home,FM_PROBE_SESSION:'session',FM_PROBE_NONCE:'nonce'},
    input,output,error,native,mcpServerNames:[],spawnAppServer:()=>createFakeAppServer(scenario),installSignalHandlers:false,
-   afterAutomaticTurn:()=>{
-    setTimeout(()=>input.write('/quit\n'),20);
+   afterAutomaticTurn:({evidence})=>{
+    if(evidence.automatic.length===cycles)setTimeout(()=>input.write('/quit\n'),20);
     return true;
    },
   });
@@ -172,6 +172,18 @@ test('actual host loop suppresses only the exact successfully offered receipt',a
  assert.deepEqual(result.result.automatic.map(item=>item.outcome),['offered']);
  assert.deepEqual(result.host.turns.map(turn=>turn.status),['completed']);
  assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
+  ['fm_notification_check',true],['fm_notification_ack',true],
+ ]);
+});
+
+test('actual host loop gives consecutive automatic turns distinct protocol identities',async()=>{
+ const result=await hostScenario('success',2);
+ assert.equal(result.failure,undefined);
+ assert.equal(result.acknowledgements,2);
+ assert.equal(new Set(result.host.turns.map(turn=>turn.id)).size,2);
+ assert.deepEqual(result.result.automatic.map(item=>item.outcome),['offered','offered']);
+ assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
+  ['fm_notification_check',true],['fm_notification_ack',true],
   ['fm_notification_check',true],['fm_notification_ack',true],
  ]);
 });
