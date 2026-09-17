@@ -13,6 +13,12 @@ if(!image)throw Error('FM_NATIVE_TEST_JQ_IMAGE must name an existing local image
 const read=file=>JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function command(exe,args){const result=spawnSync(exe,args,{encoding:'utf8',timeout:120000});if(result.status!==0)throw Error(result.stderr||result.stdout);return result;}
+function contains(root,candidate){const relative=path.relative(root,candidate);return relative===''||(!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep));}
+const localAppData=command('powershell.exe',['-NoProfile','-NonInteractive','-Command','[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)']).stdout.trim();
+const windowsTemp=path.resolve(localAppData,'Temp');
+const outsideRoot=path.resolve(process.env.FM_NATIVE_TEST_OUTSIDE_ROOT||path.join(repo,'data/native-launcher'));
+const outside=path.join(outsideRoot,path.basename(area)+'-outside');
+assert.equal(contains(windowsTemp,outside),false,'FM_NATIVE_TEST_OUTSIDE_ROOT must resolve outside the canonical Windows temporary directory');
 command('git',['-c','core.symlinks=true','clone','--quiet','--no-local','--single-branch',repo,code]);
 fs.cpSync(path.join(repo,'bin/native-owner'),path.join(code,'bin/native-owner'),{recursive:true});
 for(const name of ['fm-native-codex.ps1','fm-session-lock-lib.sh','fm-sessionstart-nudge.sh','fm-harness.sh','fm-backlog-transition-lib.sh','fm-supervision-lib.sh','fm-wake-lib.sh','fm-startup-network.sh','fm-inbox.sh','fm-lock.sh'])fs.copyFileSync(path.join(repo,'bin',name),path.join(code,'bin',name));
@@ -215,7 +221,6 @@ for(const [name,row] of [
  assert.equal(fs.readFileSync(queue,'utf8'),row);assert.equal(fs.readFileSync(marker,'utf8'),'pending:downtime:preserve\n');assert.equal(fs.existsSync(path.join(wakeHome,'owner-probe.json')),false);
 }
 records.push('unsupported and malformed wake records refused unchanged before lease acquisition');
-const outside=path.join(repo,'data/native-launcher',path.basename(area)+'-outside');
 assert.equal(fs.existsSync(outside),false);
 const external=start(outside);external.child.stdin.end();assert.notEqual((await bound(external.done,external,20000)).exit,0);assert.equal(fs.existsSync(outside),false);
 const target=path.join(area,'junction-target'),junction=path.join(area,'junction');fs.mkdirSync(target);fs.symlinkSync(target,junction,'junction');
