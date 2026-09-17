@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {spawn,spawnSync} from 'node:child_process';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
@@ -180,15 +181,14 @@ fs.mkdirSync(path.dirname(maskedStatus),{recursive:true});fs.writeFileSync(maske
 const masked=start(maskedHome,true,{...process.env,BASH_ENV:mask});masked.child.stdin.end();assert.notEqual((await bound(masked.done,masked,20000)).exit,0);
 assert.equal(fs.readFileSync(maskedStatus,'utf8'),'preserve masked residual state');assert.equal(fs.existsSync(path.join(maskedHome,'owner-probe.json')),false);
 records.push('ambient Bash startup hooks cannot bypass admission before lease acquisition');
-const customHome=path.join(area,'registered-custom'),customState=path.join(customHome,'state'),customCheck=path.join(customState,'custom.check.sh'),canary=path.join(customHome,'executed');
-fs.mkdirSync(customState,{recursive:true});fs.writeFileSync(customCheck,`#!/usr/bin/env bash\nprintf executed > "${posix(canary)}"\n`);
-const chmod=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','chmod 0700 -- "$1"','custom-check-mode',posix(customCheck)],{env:{...process.env,MSYS:'winsymlinks:nativestrict'},encoding:'utf8',timeout:30000});
-assert.equal(chmod.status,0,chmod.stderr);
-const register=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(code,'bin/fm-check-register.sh')),'custom'],{env:{...process.env,FM_HOME:posix(customHome),MSYS:'winsymlinks:nativestrict'},encoding:'utf8',timeout:30000});
-assert.equal(register.status,0,register.stderr);
+const customHome=path.join(area,'custom-work'),customState=path.join(customHome,'state'),customCheck=path.join(customState,'custom.check.sh'),customTrust=path.join(customState,'custom.check-trust'),canary=path.join(customHome,'executed');
+const customCheckBody=`#!/usr/bin/env bash\nprintf executed > "${posix(canary)}"\n`,customTrustBody=`fm-custom-check-v1\n${createHash('sha256').update(customCheckBody).digest('hex')}\n`;
+// Registration itself is covered on platforms that support its private-mode contract;
+// this native fixture exercises the persisted custom-work admission boundary.
+fs.mkdirSync(customState,{recursive:true});fs.writeFileSync(customCheck,customCheckBody);fs.writeFileSync(customTrust,customTrustBody);
 const custom=start(customHome);custom.child.stdin.end();assert.notEqual((await bound(custom.done,custom,20000)).exit,0);
-assert.equal(fs.existsSync(canary),false);assert.equal(fs.existsSync(path.join(customHome,'owner-probe.json')),false);
-records.push('registered custom work is refused before lease acquisition without execution');
+assert.equal(fs.existsSync(canary),false);assert.equal(fs.existsSync(path.join(customHome,'owner-probe.json')),false);assert.equal(fs.readFileSync(customCheck,'utf8'),customCheckBody);assert.equal(fs.readFileSync(customTrust,'utf8'),customTrustBody);
+records.push('persisted custom work is refused unchanged before lease acquisition without execution');
 for(const [name,contents] of [
  ['queued-backlog','## In flight\n\n## Queued\n- [ ] queued-work - preserved project work (repo: firstmate) (kind: ship)\n\n## Done\n'],
  ['unrecognized-backlog','# Backlog\n\nproject work in an unrecognized form\n'],
