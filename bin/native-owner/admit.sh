@@ -39,6 +39,14 @@ fi
 if [ -e "$FM_HOME/state" ] || [ -L "$FM_HOME/state" ]; then
   export FM_STATE_OVERRIDE="$FM_HOME/state"
   . bin/fm-wake-lib.sh
+  # Read the inbox, queue, and recovery marker from one publication boundary.
+  if ! fm_lock_acquire_wait_bounded "$FM_WAKE_QUEUE_LOCK" 10; then
+    printf 'native admission could not acquire the wake queue lock within its bound\n' >&2
+    exit 2
+  fi
+  trap 'fm_lock_release "$FM_WAKE_QUEUE_LOCK"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if ! fm_wake_native_empty_fleet_preflight "$FM_HOME/state" "$native_evidence"; then
     printf '%s\n' "${FM_WAKE_NATIVE_ADMISSION_ERROR:-the home contains unsupported wake state}" >&2
     exit 2

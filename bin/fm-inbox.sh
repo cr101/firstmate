@@ -152,23 +152,20 @@ aws_call() {
 
 # ---------------------------------------------------------------- note
 
-# Append exactly one wake so firstmate picks the note up at its next drain.
-# Failure to wake is NOT allowed to lose the note: the record is already on
-# disk, so we report the wake failure and still exit non-zero loudly.
-wake_for() {
-  local id=$1 summary=$2 lib="$FM_ROOT/bin/fm-wake-lib.sh"
-  if [ ! -r "$lib" ]; then
-    printf 'fm-inbox: note saved but NOT announced (missing %s)\n' "$lib" >&2
-    return 1
-  fi
-  # shellcheck source=/dev/null
-  FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" STATE="$STATE" . "$lib"
-  fm_wake_append check "inbox:$id" "check: captain inbox note $id - $summary"
-}
-
-queue_note() {
-  local source=$1 body=$2 extra=${3:-}
+# Publish the note and its wake under the queue lock, including inbox staging.
+# Failed announcement preserves the saved note and reports failure.
+queue_note() (
+  local source=$1 body=$2 extra=${3:-} lib="$FM_ROOT/bin/fm-wake-lib.sh" can_wake=0
   [ -n "${body//[[:space:]]/}" ] || die "refusing to queue an empty note"
+  if [ -r "$lib" ]; then
+    # shellcheck source=/dev/null
+    FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" STATE="$STATE" . "$lib"
+    fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+    trap 'fm_lock_release "$FM_WAKE_QUEUE_LOCK"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    can_wake=1
+  fi
   mkdir -p "$INBOX"
 
   local tmp id summary staging_name
@@ -191,12 +188,12 @@ queue_note() {
   summary=$(printf '%s' "$body" | tr '\n\t' '  ' | cut -c1-100)
   printf 'queued %s\n' "$id"
   printf '  %s\n' "$summary"
-  if wake_for "$id" "$summary"; then
+  if [ "$can_wake" = 1 ] && fm_wake_append_locked check "inbox:$id" "check: captain inbox note $id - $summary"; then
     printf '  firstmate will pick this up at its next check.\n'
   else
     die "note $id is saved at $INBOX/$id.note but firstmate was NOT woken"
   fi
-}
+)
 
 cmd_note() {
   local body

@@ -70,14 +70,16 @@ function enqueue(home,message){
  const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export PATH="$1/bin/native-owner/tools:/usr/bin:/bin:$PATH"; export FM_HOME; FM_HOME=$(cygpath -u "$3"); exec /usr/bin/bash "$1/bin/fm-inbox.sh" note "$2"','launcher-test',posix(code),message,home],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));return result.stdout.trim().split(/\s+/)[1];
 }
+function pausedEnqueue(home,message,control){
+ const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('FM_')&&!key.startsWith('PI_')));
+ Object.assign(env,{MSYS:'winsymlinks:nativestrict'});
+ const child=spawn('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(repo,'tests/fixtures/native-owner/pause-inbox-publication.sh')),posix(code),posix(home),posix(control),message],{env,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';
+ child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);
+ return new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',exit=>resolve({exit,stdout,stderr}));});
+}
 function appendStartupWake(home,state){
  const env={...process.env,FM_HOME:home,MSYS:'winsymlinks:nativestrict'};
  const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export FM_ROOT_OVERRIDE FM_STATE_OVERRIDE; FM_ROOT_OVERRIDE=$(cygpath -u "$1"); FM_STATE_OVERRIDE=$(cygpath -u "$3"); . "$FM_ROOT_OVERRIDE/bin/fm-wake-lib.sh"; fm_wake_append_startup_network "$2"','startup-wake',code,state,path.join(home,'state')],{env,encoding:'utf8',timeout:30000});
- assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
-}
-function appendInboxWake(home,id,summary){
- const env={...process.env,FM_HOME:home,MSYS:'winsymlinks:nativestrict'};
- const result=spawnSync('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','export FM_ROOT_OVERRIDE FM_STATE_OVERRIDE; FM_ROOT_OVERRIDE=$(cygpath -u "$1"); FM_STATE_OVERRIDE=$(cygpath -u "$4"); . "$FM_ROOT_OVERRIDE/bin/fm-wake-lib.sh"; fm_wake_append check "inbox:$2" "check: captain inbox note $2 - $3"','inbox-wake',code,id,summary,path.join(home,'state')],{env,encoding:'utf8',timeout:30000});
  assert.equal(result.status,0,JSON.stringify({error:result.error?.message,stdout:result.stdout,stderr:result.stderr}));
 }
 const journalRows=home=>fs.readFileSync(path.join(home,'owner-receipts.jsonl'),'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
@@ -161,18 +163,22 @@ const hostScript=path.join(code,'bin/native-owner/codex-host.mjs'),hostSource=fs
 fs.copyFileSync(path.join(repo,'tests/fixtures/native-owner/fake-app-server.mjs'),path.join(code,'bin/native-owner/fake-app-server.mjs'));
 fs.writeFileSync(hostScript,"import fs from 'node:fs';\nimport path from 'node:path';\nimport {runCodexHost} from './codex-host-runtime.mjs';\nimport {createFakeAppServer} from './fake-app-server.mjs';\nconst pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));\ntry { await runCodexHost({spawnAppServer:()=>createFakeAppServer('success'),mcpServerNames:[],afterAutomaticTurn:async ({evidence})=>{if(evidence.automatic.length===1){fs.writeFileSync(path.join(process.env.FM_PROBE_HOME,'first-automatic-complete'),'ready');while(!fs.existsSync(path.join(process.env.FM_PROBE_HOME,'continue-after-first')))await pause(20);}}}); } catch(error) { console.error(error.message); process.exitCode=1; }\n");
 const completedHome=path.join(area,'completed-ack-restart'),completedNote=enqueue(completedHome,'Complete this controlled acknowledgement before restart.');
+const publicationControl=path.join(area,'publication-control');fs.mkdirSync(publicationControl);
 const completedSession=start(completedHome,false);let completedReady;
 try {
  completedReady=await ready(completedSession);
  await waitUntil(completedSession,'completed acknowledgement',()=>acknowledgedNote(completedHome,completedNote)&&fs.existsSync(path.join(completedHome,'state/inbox/handled',completedNote+'.note'))&&!pendingNote(completedHome,completedNote)&&fs.existsSync(path.join(completedReady.runtime,'first-automatic-complete')));
- const transitionNote='transition-note',transitionMessage='Complete this notification after its producer finishes publishing.';
- fs.writeFileSync(path.join(completedHome,'state/inbox',transitionNote+'.note'),`id=${transitionNote}\nat=2026-09-18T00:00:00Z\nsource=text\n--\n${transitionMessage}\n`);
+ const transition=pausedEnqueue(completedHome,'Complete this notification after its producer finishes publishing.',publicationControl);
+ await waitUntil(completedSession,'producer publication boundary',()=>fs.existsSync(path.join(publicationControl,'paused')));
  fs.writeFileSync(path.join(completedReady.runtime,'continue-after-first'),'continue');
  await sleep(1000);
- appendInboxWake(completedHome,transitionNote,transitionMessage);
+ fs.writeFileSync(path.join(publicationControl,'release'),'release');
+ const publication=await bound(transition,completedSession,15000);assert.equal(publication.exit,0,publication.stderr);
+ const transitionNote=publication.stdout.match(/^queued (\S+)/m)?.[1];assert(transitionNote,publication.stdout);
  await waitUntil(completedSession,'notification publication transition',()=>acknowledgedNote(completedHome,transitionNote)&&fs.existsSync(path.join(completedHome,'state/inbox/handled',transitionNote+'.note'))&&!pendingNote(completedHome,transitionNote)&&fs.readFileSync(path.join(completedHome,'state/.wake-queue'),'utf8').trim()==='',60000);
  completedSession.child.stdin.write('/quit\n');assert.equal((await bound(completedSession.done,completedSession,20000)).exit,0);
 }finally{
+ fs.writeFileSync(path.join(publicationControl,'release'),'release');
  if(completedSession.child.exitCode===null){completedSession.child.stdin.write('/quit\n');if(completedReady)fs.writeFileSync(path.join(completedReady.runtime,'continue-after-first'),'continue');const stopped=await bound(completedSession.done,completedSession,20000);assert.equal(stopped.exit,0,stopped.stderr);}
 }
 const completedRestart=start(completedHome);await ready(completedRestart,completedReady.owner.generation);completedRestart.child.stdin.end();assert.equal((await bound(completedRestart.done,completedRestart,20000)).exit,0);
