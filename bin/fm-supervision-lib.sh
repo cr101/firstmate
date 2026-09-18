@@ -139,6 +139,7 @@ fm_supervision_residual_inputs_absent() {  # <state-dir>
     return 1
   fi
   if ! fm_procevent_inbox_has_only_handled_history "$state"; then
+    # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
     FM_SUP_RESIDUAL_ERROR=${FM_PROCEVENT_INBOX_ERROR:-"process-event result state is unresolved under $state/procevent-inbox"}
     return 1
   fi

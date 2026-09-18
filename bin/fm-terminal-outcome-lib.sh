@@ -24,10 +24,13 @@ fm_terminal_outcome_pending_absent() {  # <state-dir>
     fi
     name=${record##*/}
     fingerprint=${name%.*}
-    if [ "${#fingerprint}" -ne 32 ]; then
-      FM_TERMINAL_OUTCOME_ERROR="terminal outcome state is unrecognized at $record"
-      return 1
-    fi
+    case "${#fingerprint}" in
+      16|32) ;;
+      *)
+        FM_TERMINAL_OUTCOME_ERROR="terminal outcome state is unrecognized at $record"
+        return 1
+        ;;
+    esac
     case "$fingerprint" in *[!A-Fa-f0-9]*)
       FM_TERMINAL_OUTCOME_ERROR="terminal outcome state is unrecognized at $record"
       return 1

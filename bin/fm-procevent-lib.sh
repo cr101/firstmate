@@ -1316,6 +1316,7 @@ fm_procevent_inbox_has_only_handled_history() {  # <state>
         fi
         ;;
       *)
+        # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
         FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $record"
         return 1
         ;;

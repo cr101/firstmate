@@ -66,6 +66,15 @@ public static partial class NativeOwner {
             if((p.ExitCode==0)!=shouldSucceed) throw new IOException("Unexpected Firstmate operation result for "+role);
         }
     }
+    static void AcknowledgeTerminalOutcome(string home,string fingerprint) {
+        string script=Path.Combine(CodeRoot,"bin","fm-inactive-reconcile.sh");
+        var start=BashHelper(script,"acknowledge "+Quote(fingerprint),home);start.RedirectStandardError=true;
+        using(var process=Process.Start(start)) {
+            var error=process.StandardError.ReadToEndAsync();
+            if(!process.WaitForExit(30000)){process.Kill();throw new TimeoutException("Terminal outcome acknowledgement exceeded its bound");}
+            if(process.ExitCode!=0)throw new InvalidOperationException("Terminal outcome acknowledgement failed: "+error.Result.Trim());
+        }
+    }
     static int Fixture() {
         foreach (string c in new [] {"root", "wrong-session", "wrong-home", "wrong-capability"}) Client(c);
         var child = Process.Start(new ProcessStartInfo(OwnExe, "client inherited-child") { UseShellExecute=false });
@@ -169,6 +178,17 @@ public static partial class NativeOwner {
                 }
             }
             Console.WriteLine("PASS: upstream and presentation terminal outcomes remain unresolved and preserved");
+            foreach(int fingerprintLength in new [] {32,16}) {
+                string outcomeHome=Path.Combine(directory,"acknowledged-terminal-outcome-"+fingerprintLength),outcomeState=Path.Combine(outcomeHome,"state"),outcomeDirectory=Path.Combine(outcomeState,"terminal-outcomes"),fingerprint=new string(fingerprintLength==32?'c':'d',fingerprintLength),pending=Path.Combine(outcomeDirectory,fingerprint+".pending"),presented=Path.Combine(outcomeDirectory,fingerprint+".presented"),outcomeBody="schema=fm-terminal-outcome.v1\nfingerprint="+fingerprint+"\ntask_id=fixture\nincarnation=fixture-1\nstate=done\noutcome_key=fixture-complete\norigin=direct\nphase=presentation\npr=\ncreated_epoch=1\nnotice_emitted=0\n";
+                Directory.CreateDirectory(outcomeDirectory);File.WriteAllText(pending,outcomeBody);
+                refused=false;try{EmptyFleet(outcomeHome,true);}catch(InvalidOperationException){refused=true;}
+                if(!refused||File.ReadAllText(pending)!=outcomeBody)throw new InvalidOperationException("Pending producer-format terminal outcome passed admission or changed");
+                AcknowledgeTerminalOutcome(outcomeHome,fingerprint);
+                if(File.Exists(pending)||!File.Exists(presented))throw new InvalidOperationException("Terminal outcome acknowledgement did not commit the presentation transition");
+                EmptyFleet(outcomeHome,true);EmptyFleet(outcomeHome,false);
+                if(File.ReadAllText(presented)!=outcomeBody||File.Exists(Path.Combine(outcomeHome,"owner-probe.json"))||File.Exists(Path.Combine(outcomeState,".lock")))throw new InvalidOperationException("Acknowledged producer-format terminal outcome was refused, changed, or caused lease activity");
+            }
+            Console.WriteLine("PASS: acknowledged 32- and 16-hex producer terminal outcomes remain admissible and unchanged");
             foreach(string terminalState in new [] {"presented","reported"}) {
                 string outcomeHome=Path.Combine(directory,"settled-terminal-outcome-"+terminalState),outcomeState=Path.Combine(outcomeHome,"state"),outcomeDirectory=Path.Combine(outcomeState,"terminal-outcomes"),fingerprint=new string(terminalState=="presented"?'c':'d',32),outcomeRecord=Path.Combine(outcomeDirectory,fingerprint+"."+terminalState),outcomeBody="schema=fm-terminal-outcome.v1\nfingerprint="+fingerprint+"\n";
                 Directory.CreateDirectory(outcomeDirectory);File.WriteAllText(outcomeRecord,outcomeBody);EmptyFleet(outcomeHome,true);EmptyFleet(outcomeHome,false);
