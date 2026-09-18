@@ -35,6 +35,10 @@ fm_lock_holder_label() {
 }
 
 fm_lock_conflict_message() {
+  if ! fm_session_pid_valid "$1"; then
+    printf 'error: session lock owner is unrecognized; operate read-only until resolved'
+    return 0
+  fi
   if fm_harness_pid_alive "$1"; then
     case "$1" in
       native:*) printf 'error: another live firstmate session holds the lock (native owner identity %s); operate read-only until resolved' "$1" ;;

@@ -444,6 +444,65 @@ test_native_admission_preserves_a_partially_numeric_windows_identity() {
   pass "session-lock: native admission preserves a partially numeric Windows identity"
 }
 
+test_ordinary_acquisition_preserves_malformed_windows_identities() {
+  local dir fakebin bad case_dir out rc index real_ln
+  dir="$TMP_ROOT/win-malformed-acquisition"
+  fakebin=$(cygwin_fakebin "$dir")
+  index=0
+
+  for bad in 'win:' 'win:abc' 'win:123oops' 'win:1:2'; do
+    index=$((index + 1))
+    case_dir="$dir/preclaim-$index"
+    mkdir -p "$case_dir/state"
+    printf '%s\n' "$bad" > "$case_dir/state/.lock"
+
+    set +e
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+      FM_TEST_WIN_TABLE="$WIN_TABLE" CLAUDE_PID=7204 "$ROOT/bin/fm-lock.sh" 2>&1)
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "ordinary acquisition accepted malformed Windows identity '$bad'"
+    [ "$(cat "$case_dir/state/.lock")" = "$bad" ] \
+      || fail "ordinary acquisition changed malformed Windows identity '$bad'"
+    case "$out" in
+      *'session lock owner is unrecognized; operate read-only until resolved'*) ;;
+      *) fail "ordinary acquisition did not identify malformed owner '$bad': $out" ;;
+    esac
+  done
+
+  case_dir="$dir/locked-recheck"
+  mkdir -p "$case_dir/state"
+  real_ln=$(command -v ln)
+  cat > "$fakebin/ln" <<'SH'
+#!/usr/bin/env bash
+set -u
+target=
+for target in "$@"; do
+  :
+done
+if [ "$target" = "$FM_TEST_LOCK_STATE/.lock.acquire" ]; then
+  printf '%s\n' 'win:123oops' > "$FM_TEST_LOCK_STATE/.lock"
+fi
+exec "$FM_TEST_REAL_LN" "$@"
+SH
+  chmod +x "$fakebin/ln"
+
+  set +e
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" CLAUDE_PID=7204 FM_TEST_REAL_LN="$real_ln" \
+    FM_TEST_LOCK_STATE="$case_dir/state" "$ROOT/bin/fm-lock.sh" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "locked acquisition recheck accepted a malformed Windows identity"
+  [ "$(cat "$case_dir/state/.lock")" = 'win:123oops' ] \
+    || fail "locked acquisition recheck changed a malformed Windows identity"
+  case "$out" in
+    *'session lock owner is unrecognized; operate read-only until resolved'*) ;;
+    *) fail "locked acquisition recheck did not identify the malformed owner: $out" ;;
+  esac
+  pass "session-lock: ordinary acquisition preserves malformed Windows identities at both checks"
+}
+
 test_cygwin_ps_without_o_still_resolves_a_local_harness() {
   local dir fakebin got
   dir="$TMP_ROOT/cygwin-local"
@@ -718,6 +777,7 @@ test_windows_published_pid_is_confirmed_before_it_is_trusted
 test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
 test_native_admission_preserves_a_partially_numeric_windows_identity
+test_ordinary_acquisition_preserves_malformed_windows_identities
 test_cygwin_ps_without_o_still_resolves_a_local_harness
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
