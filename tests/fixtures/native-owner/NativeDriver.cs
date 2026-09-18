@@ -160,6 +160,28 @@ public static partial class NativeOwner {
             refused=false;try{EmptyFleet(turnEnded,true);using(var lease=new NativeHomeLease(turnEnded)){} }catch(InvalidOperationException){refused=true;}
             if(!refused||File.ReadAllText(turnEndedRecord)!="preserve\n"||File.Exists(Path.Combine(turnEnded,"owner-probe.json"))||File.Exists(Path.Combine(turnEndedState,".lock")))throw new InvalidOperationException("Residual turn-end work passed admission or caused lease activity");
             Console.WriteLine("PASS: residual turn-end work is preserved without lease activity");
+            foreach(string phase in new [] {"upstream","presentation"}) {
+                string outcomeHome=Path.Combine(directory,"pending-terminal-outcome-"+phase),outcomeState=Path.Combine(outcomeHome,"state"),outcomeDirectory=Path.Combine(outcomeState,"terminal-outcomes"),fingerprint=new string(phase=="upstream"?'a':'b',32),outcomeRecord=Path.Combine(outcomeDirectory,fingerprint+".pending"),outcomeBody="schema=fm-terminal-outcome.v1\nfingerprint="+fingerprint+"\nphase="+phase+"\n";
+                Directory.CreateDirectory(outcomeDirectory);File.WriteAllText(outcomeRecord,outcomeBody);
+                foreach(bool launch in new [] {true,false}) {
+                    refused=false;try{EmptyFleet(outcomeHome,launch);using(var lease=new NativeHomeLease(outcomeHome)){} }catch(InvalidOperationException){refused=true;}
+                    if(!refused||File.ReadAllText(outcomeRecord)!=outcomeBody||File.Exists(Path.Combine(outcomeHome,"owner-probe.json"))||File.Exists(Path.Combine(outcomeState,".lock")))throw new InvalidOperationException("Pending terminal outcome passed admission, changed, or caused lease activity");
+                }
+            }
+            Console.WriteLine("PASS: upstream and presentation terminal outcomes remain unresolved and preserved");
+            foreach(string terminalState in new [] {"presented","reported"}) {
+                string outcomeHome=Path.Combine(directory,"settled-terminal-outcome-"+terminalState),outcomeState=Path.Combine(outcomeHome,"state"),outcomeDirectory=Path.Combine(outcomeState,"terminal-outcomes"),fingerprint=new string(terminalState=="presented"?'c':'d',32),outcomeRecord=Path.Combine(outcomeDirectory,fingerprint+"."+terminalState),outcomeBody="schema=fm-terminal-outcome.v1\nfingerprint="+fingerprint+"\n";
+                Directory.CreateDirectory(outcomeDirectory);File.WriteAllText(outcomeRecord,outcomeBody);EmptyFleet(outcomeHome,true);EmptyFleet(outcomeHome,false);
+                if(File.ReadAllText(outcomeRecord)!=outcomeBody||File.Exists(Path.Combine(outcomeHome,"owner-probe.json"))||File.Exists(Path.Combine(outcomeState,".lock")))throw new InvalidOperationException("Settled terminal outcome was refused, changed, or caused lease activity");
+            }
+            Console.WriteLine("PASS: presented and reported terminal-outcome history remains admissible and unchanged");
+            string unknownOutcomeHome=Path.Combine(directory,"unknown-terminal-outcome"),unknownOutcomeState=Path.Combine(unknownOutcomeHome,"state"),unknownOutcomeDirectory=Path.Combine(unknownOutcomeState,"terminal-outcomes"),unknownOutcomeRecord=Path.Combine(unknownOutcomeDirectory,new string('e',32)+".unknown"),unknownOutcomeBody="preserve unknown terminal state\n";
+            Directory.CreateDirectory(unknownOutcomeDirectory);File.WriteAllText(unknownOutcomeRecord,unknownOutcomeBody);
+            foreach(bool launch in new [] {true,false}) {
+                refused=false;try{EmptyFleet(unknownOutcomeHome,launch);using(var lease=new NativeHomeLease(unknownOutcomeHome)){} }catch(InvalidOperationException){refused=true;}
+                if(!refused||File.ReadAllText(unknownOutcomeRecord)!=unknownOutcomeBody||File.Exists(Path.Combine(unknownOutcomeHome,"owner-probe.json"))||File.Exists(Path.Combine(unknownOutcomeState,".lock")))throw new InvalidOperationException("Unknown terminal-outcome state passed admission, changed, or caused lease activity");
+            }
+            Console.WriteLine("PASS: unknown terminal-outcome state is preserved and refused");
             string pendingResultHome=Path.Combine(directory,"pending-process-event-result"),pendingResultState=Path.Combine(pendingResultHome,"state"),pendingResultInbox=Path.Combine(pendingResultState,"procevent-inbox"),pendingResult=Path.Combine(pendingResultInbox,"native-result.1.result"),pendingAdapter=Path.Combine(pendingResultInbox,"native-result.1.adapter"),pendingResultBody="preserve captured result\n";
             Directory.CreateDirectory(pendingResultInbox);File.WriteAllText(pendingResult,pendingResultBody);File.WriteAllText(pendingAdapter,"lavish\n");
             refused=false;try{EmptyFleet(pendingResultHome,true);using(var lease=new NativeHomeLease(pendingResultHome)){} }catch(InvalidOperationException){refused=true;}

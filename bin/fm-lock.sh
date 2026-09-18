@@ -126,7 +126,10 @@ if [ "${1:-}" = "status" ]; then
   elif fm_harness_pid_alive "$old"; then
     echo "lock: held by live $(fm_lock_owner_label "$old")"
   elif fm_harness_pid_excludes "$old"; then
-    echo "lock: held by native owner with unconfirmed health $old"
+    case "$old" in
+      native:*) echo "lock: held by native owner with unconfirmed health $old" ;;
+      *) echo "lock: held by owner with unconfirmed health ($(fm_lock_holder_label "$old"))" ;;
+    esac
   else
     echo "lock: stale ($(fm_lock_holder_label "$old") dead or not a harness)"
   fi

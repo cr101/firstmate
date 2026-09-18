@@ -228,15 +228,21 @@ fm_win_normalize_command() {  # <windows path>
   printf '%s' "${path%.exe}"
 }
 
-# Print the normalized executable path of live Windows process $1, or return 1.
+# Print the normalized executable path of live Windows process $1.
 # Presence in `ps -W` is also this bridge's liveness test, because kill -0 cannot
 # answer that question across the namespace boundary.
+# Returns 1 when the process is absent and 2 when the table cannot be queried.
 fm_win_command() {  # <winpid>
-  local winpid=$1 out
+  local winpid=$1 table out
   case "$winpid" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  out=$(ps -W 2>/dev/null | awk -v w="$winpid" '$4 == w { for (i = 8; i <= NF; i++) printf "%s%s", (i > 8 ? " " : ""), $i; exit }')
+  if ! table=$(ps -W 2>/dev/null); then
+    return 2
+  fi
+  if ! out=$(printf '%s\n' "$table" | awk -v w="$winpid" '$4 == w { for (i = 8; i <= NF; i++) printf "%s%s", (i > 8 ? " " : ""), $i; exit }'); then
+    return 2
+  fi
   [ -n "$out" ] || return 1
   fm_win_normalize_command "$out"
 }
@@ -360,13 +366,13 @@ EOF
 # kill -0 cannot see across that boundary and would report a live harness as
 # dead - which would hand a running session's home to a second one.
 fm_harness_pid_alive() {
-  local pid=$1 comm args winpid
+  local pid=$1 comm args winpid owner_rc
   case "$pid" in native:*)
     fm_native_owner_state "$pid"
     return ;;
   esac
   if winpid=$(fm_win_untag_pid "$pid"); then
-    comm=$(fm_win_command "$winpid") || return 1
+    if comm=$(fm_win_command "$winpid"); then :; else owner_rc=$?; return "$owner_rc"; fi
     fm_harness_process_matches "$comm" "$comm"
     return
   fi
@@ -379,13 +385,9 @@ fm_harness_pid_alive() {
 # Test exclusion rather than positive health: return 0 for a live or unknown
 # owner identity, and 1 only when the owner is proven dead.
 fm_harness_pid_excludes() {
-  local pid=$1 owner_rc
-  case "$pid" in native:*)
-    if fm_native_owner_state "$pid"; then return 0; else owner_rc=$?; fi
-    [ "$owner_rc" -ne 1 ]
-    return ;;
-  esac
-  fm_harness_pid_alive "$pid"
+  local owner_rc
+  if fm_harness_pid_alive "$1"; then return 0; else owner_rc=$?; fi
+  [ "$owner_rc" -ne 1 ]
 }
 
 # True when state dir $1 holds the owner identity of this native session or ANY

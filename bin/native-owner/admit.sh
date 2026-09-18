@@ -29,6 +29,7 @@ fi
 . bin/fm-backlog-transition-lib.sh
 . bin/fm-pr-lib.sh
 . bin/fm-procevent-lib.sh
+. bin/fm-terminal-outcome-lib.sh
 . bin/fm-supervision-lib.sh
 if ! fm_backlog_empty_fleet_preflight "$FM_HOME/state" "$FM_HOME/data"; then
   printf '%s\n' "${FM_BACKLOG_EMPTY_ERROR:-the home contains work-bearing records}" >&2

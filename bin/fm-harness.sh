@@ -66,8 +66,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
-# shellcheck source=bin/fm-cursor-lib.sh
-. "$SCRIPT_DIR/fm-cursor-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-gemini-lib.sh
 . "$SCRIPT_DIR/fm-gemini-lib.sh"
 
@@ -399,13 +399,10 @@ harness_family() {
 #     a harness-shaped path in some node process's arguments is weaker evidence
 #     than a harness publishing its own identity.
 detect_own() {
-  local native_state native_home native_harness
-  native_home="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-  native_home=${native_home%/state}
+  local native_harness
   case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*)
-    if [ -f "$native_home/owner-probe.json" ]; then
-      native_state=$(cygpath -w "${FM_STATE_OVERRIDE:-$FM_HOME/state}") || { echo unknown; return; }
-      native_harness=$(MSYS2_ARG_CONV_EXCL='*' "$SCRIPT_DIR/fm-native-owner.exe" owner harness "$native_state" 2>/dev/null) || { echo unknown; return; }
+    if fm_native_owner_selected; then
+      native_harness=$(fm_native_owner_call harness 2>/dev/null) || { echo unknown; return; }
       case "$native_harness" in codex) echo codex ;; *) echo unknown ;; esac
       return
     fi ;;

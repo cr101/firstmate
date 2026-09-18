@@ -1255,6 +1255,7 @@ fm_procevent_result_extension_load() {  # <result-path>
   fm_procevent_digest_valid "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST" || return 2
 }
 
+# shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_PROCEVENT_INBOX_ERROR=
 fm_procevent_inbox_has_only_handled_history() {  # <state>
   local state=$1 inbox record name result id seq extension

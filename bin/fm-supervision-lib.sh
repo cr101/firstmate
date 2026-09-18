@@ -115,6 +115,7 @@ fm_supervision_status() {
   return 0
 }
 
+# shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_SUP_RESIDUAL_ERROR=
 fm_supervision_residual_inputs_absent() {  # <state-dir>
   local state=$1 record count
@@ -133,6 +134,10 @@ fm_supervision_residual_inputs_absent() {  # <state-dir>
       return 1
     fi
   done
+  if ! fm_terminal_outcome_pending_absent "$state"; then
+    FM_SUP_RESIDUAL_ERROR=${FM_TERMINAL_OUTCOME_ERROR:-"terminal outcome state is unresolved under $state/terminal-outcomes"}
+    return 1
+  fi
   if ! fm_procevent_inbox_has_only_handled_history "$state"; then
     FM_SUP_RESIDUAL_ERROR=${FM_PROCEVENT_INBOX_ERROR:-"process-event result state is unresolved under $state/procevent-inbox"}
     return 1
