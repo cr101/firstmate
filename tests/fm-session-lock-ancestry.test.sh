@@ -611,7 +611,7 @@ test_native_status_and_acquisition_behavior() {
   fakebin="$dir/fakebin"
   identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   mkdir -p "$bindir" "$fakebin" "$dir/state"
-  cp "$ROOT/bin/fm-lock.sh" "$ROOT/bin/fm-session-lock-lib.sh" "$ROOT/bin/fm-wake-lib.sh" "$bindir/"
+  cp "$ROOT/bin/fm-lock.sh" "$ROOT/bin/fm-session-lock-lib.sh" "$ROOT/bin/fm-cursor-lib.sh" "$ROOT/bin/fm-wake-lib.sh" "$bindir/"
   cat > "$bindir/fm-native-owner.exe" <<'SH'
 #!/usr/bin/env bash
 case "${2:-}" in
@@ -633,7 +633,11 @@ case "$*" in
   *) exit 1 ;;
 esac
 SH
-  chmod +x "$bindir/fm-native-owner.exe" "$bindir/fm-lock.sh" "$fakebin/cygpath" "$fakebin/ps"
+  cat > "$fakebin/uname" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' MINGW64_NT-fixture
+SH
+  chmod +x "$bindir/fm-native-owner.exe" "$bindir/fm-lock.sh" "$fakebin/cygpath" "$fakebin/ps" "$fakebin/uname"
   printf '%s\n' "$identity" > "$dir/state/.lock"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_TEST_NATIVE_STATE=2 "$bindir/fm-lock.sh" status)
   case "$out" in
