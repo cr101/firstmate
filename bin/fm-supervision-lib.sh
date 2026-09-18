@@ -133,6 +133,10 @@ fm_supervision_residual_inputs_absent() {  # <state-dir>
       return 1
     fi
   done
+  if ! fm_procevent_inbox_has_only_handled_history "$state"; then
+    FM_SUP_RESIDUAL_ERROR=${FM_PROCEVENT_INBOX_ERROR:-"process-event result state is unresolved under $state/procevent-inbox"}
+    return 1
+  fi
 }
 
 # fm_supervision_needed <state-dir> [grace-seconds]

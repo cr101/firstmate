@@ -25,6 +25,74 @@ wait_file() {
   fail "publication did not reach $file"
 }
 admit() { FM_HOME="$1" bash "$ROOT/bin/native-owner/admit.sh" owned-operation </dev/null; }
+capture_result() {
+  local home=$1 id=$2 payload="$TMP/$id.payload"
+  printf 'captured %s\n' "$id" > "$payload"
+  bash -c '
+    . "$1/bin/fm-pr-lib.sh"
+    . "$1/bin/fm-procevent-lib.sh"
+    fm_procevent_capture "$2/state" "$3" lavish "$4"
+  ' _ "$ROOT" "$home" "$id" "$payload"
+}
+handle_result() {
+  bash -c '
+    . "$1/bin/fm-pr-lib.sh"
+    . "$1/bin/fm-procevent-lib.sh"
+    fm_procevent_mark_handled "$2/state" "$3" 1
+  ' _ "$ROOT" "$1" "$2"
+}
+assert_refused_unchanged() {
+  local home=$1 label=$2 before="$1-before"
+  cp -R "$home" "$before"
+  if admit "$home" >"$TMP/$label.out" 2>&1; then fail "admitted $label"; fi
+  diff -r "$home" "$before" || fail "changed refused $label records"
+}
+assert_accepted_unchanged() {
+  local home=$1 label=$2 before="$1-before"
+  cp -R "$home" "$before"
+  admit "$home" >"$TMP/$label.out" 2>&1 || fail "refused $label: $(<"$TMP/$label.out")"
+  diff -r "$home" "$before" || fail "changed accepted $label records"
+}
+
+empty_result_home="$TMP/empty-result-home"
+mkdir -p "$empty_result_home/state"
+assert_accepted_unchanged "$empty_result_home" empty-result-home
+pass 'admits a home with no process-event result state'
+
+for source_shape in absent empty; do
+  result_home="$TMP/unhandled-$source_shape-source"
+  capture_result "$result_home" "pending-$source_shape" >/dev/null
+  [ "$source_shape" != empty ] || mkdir -p "$result_home/state/procevent"
+  assert_refused_unchanged "$result_home" "unhandled-$source_shape-source"
+  pass "refuses an unhandled result with an $source_shape source directory without changing it"
+done
+
+queued_result_home="$TMP/queued-result"
+FM_HOME="$queued_result_home" bash "$ROOT/bin/fm-inbox.sh" note 'Supported notification beside a captured result' >/dev/null
+admit "$queued_result_home" >/dev/null || fail 'supported notification control was not admissible'
+capture_result "$queued_result_home" queued-result >/dev/null
+assert_refused_unchanged "$queued_result_home" queued-result
+pass 'refuses an unhandled result even beside an otherwise supported queued notification'
+
+handled_result_home="$TMP/handled-result"
+handled_result=$(capture_result "$handled_result_home" handled-result)
+handle_result "$handled_result_home" handled-result
+assert_accepted_unchanged "$handled_result_home" handled-result
+[ -f "${handled_result%.result}.handled" ] || fail 'handled-history control lost its acknowledgement'
+pass 'admits canonical handled process-event history without changing it'
+
+malformed_result_home="$TMP/malformed-result"
+mkdir -p "$malformed_result_home/state/procevent-inbox"
+printf 'ambiguous\n' > "$malformed_result_home/state/procevent-inbox/missing-sequence.result"
+printf 'lavish\n' > "$malformed_result_home/state/procevent-inbox/missing-sequence.adapter"
+assert_refused_unchanged "$malformed_result_home" malformed-result
+
+ambiguous_ack_home="$TMP/ambiguous-ack"
+ambiguous_result=$(capture_result "$ambiguous_ack_home" ambiguous-ack)
+mkdir "${ambiguous_result%.result}.handled"
+assert_refused_unchanged "$ambiguous_ack_home" ambiguous-ack
+pass 'refuses malformed results and ambiguous acknowledgement state without changing them'
+
 # Pause an actual producer at its external rename, without production test hooks.
 paused_note() {
   bash "$ROOT/tests/fixtures/native-owner/pause-inbox-publication.sh" \

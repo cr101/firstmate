@@ -27,6 +27,8 @@ if [ "$mode" = launch ] && ! FM_STATE_OVERRIDE="$FM_HOME/state" bin/fm-lock.sh n
 fi
 . bin/fm-tasks-axi-lib.sh
 . bin/fm-backlog-transition-lib.sh
+. bin/fm-pr-lib.sh
+. bin/fm-procevent-lib.sh
 . bin/fm-supervision-lib.sh
 if ! fm_backlog_empty_fleet_preflight "$FM_HOME/state" "$FM_HOME/data"; then
   printf '%s\n' "${FM_BACKLOG_EMPTY_ERROR:-the home contains work-bearing records}" >&2
