@@ -1277,7 +1277,36 @@ fm_procevent_inbox_has_only_handled_history() {  # <state>
     fi
     name=${record##*/}
     case "$name" in
-      *.result) ;;
+      *.result)
+        result=$record
+        id=$(fm_procevent_result_source_id "$result")
+        seq=$(fm_procevent_result_sequence "$result")
+        if ! fm_procevent_source_id_valid "$id"; then
+          FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $result"
+          return 1
+        fi
+        case "$seq" in
+          ''|*[!0-9]*)
+            FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $result"
+            return 1
+            ;;
+        esac
+        if ! fm_procevent_result_adapter "$result" >/dev/null; then
+          FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $result"
+          return 1
+        fi
+        if ! fm_procevent_is_handled "$state" "$id" "$seq"; then
+          FM_PROCEVENT_INBOX_ERROR="unhandled process-event result is present at $result"
+          return 1
+        fi
+        extension=${result%.result}.extension
+        if [ -e "$extension" ] || [ -L "$extension" ]; then
+          if ! fm_procevent_result_extension_load "$result"; then
+            FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $extension"
+            return 1
+          fi
+        fi
+        ;;
       *.adapter|*.extension|*.handled)
         result=${record%.*}.result
         if [ ! -f "$result" ] || [ -L "$result" ]; then
@@ -1290,36 +1319,6 @@ fm_procevent_inbox_has_only_handled_history() {  # <state>
         return 1
         ;;
     esac
-  done
-  for result in "$inbox"/*.result; do
-    [ -e "$result" ] || continue
-    id=$(fm_procevent_result_source_id "$result")
-    seq=$(fm_procevent_result_sequence "$result")
-    if ! fm_procevent_source_id_valid "$id"; then
-      FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $result"
-      return 1
-    fi
-    case "$seq" in
-      ''|*[!0-9]*)
-        FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $result"
-        return 1
-        ;;
-    esac
-    if ! fm_procevent_result_adapter "$result" >/dev/null; then
-      FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $result"
-      return 1
-    fi
-    if ! fm_procevent_is_handled "$state" "$id" "$seq"; then
-      FM_PROCEVENT_INBOX_ERROR="unhandled process-event result is present at $result"
-      return 1
-    fi
-    extension=${result%.result}.extension
-    if [ -e "$extension" ] || [ -L "$extension" ]; then
-      if ! fm_procevent_result_extension_load "$result"; then
-        FM_PROCEVENT_INBOX_ERROR="process-event result history is malformed at $extension"
-        return 1
-      fi
-    fi
   done
   return 0
 }

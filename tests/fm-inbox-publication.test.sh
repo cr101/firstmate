@@ -26,7 +26,8 @@ wait_file() {
 }
 admit() { FM_HOME="$1" bash "$ROOT/bin/native-owner/admit.sh" owned-operation </dev/null; }
 capture_result() {
-  local home=$1 id=$2 payload="$TMP/$id.payload"
+  local home=$1 id=$2 payload
+  payload="$TMP/$id.payload"
   printf 'captured %s\n' "$id" > "$payload"
   bash -c '
     . "$1/bin/fm-pr-lib.sh"
@@ -86,6 +87,11 @@ mkdir -p "$malformed_result_home/state/procevent-inbox"
 printf 'ambiguous\n' > "$malformed_result_home/state/procevent-inbox/missing-sequence.result"
 printf 'lavish\n' > "$malformed_result_home/state/procevent-inbox/missing-sequence.adapter"
 assert_refused_unchanged "$malformed_result_home" malformed-result
+
+hidden_result_home="$TMP/hidden-result"
+mkdir -p "$hidden_result_home/state/procevent-inbox"
+printf 'preserve hidden result\n' > "$hidden_result_home/state/procevent-inbox/.lost.1.result"
+assert_refused_unchanged "$hidden_result_home" hidden-result
 
 ambiguous_ack_home="$TMP/ambiguous-ack"
 ambiguous_result=$(capture_result "$ambiguous_ack_home" ambiguous-ack)
