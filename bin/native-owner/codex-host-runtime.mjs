@@ -5,6 +5,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {confirmAutomaticNotificationOffer,createNotificationGate} from './codex-tool-gate.mjs';
 import {createHostLifecycle,reconciliationWarning} from './host-lifecycle.mjs';
+import {saveHostEvidence} from './host-evidence.mjs';
 import {discoverMcpServerNames,isolatedAppServerArgs,verifyExternalToolConfiguration,verifyExternalToolIsolation} from './app-server-policy.mjs';
 
 export async function runCodexHost(options={}) {
@@ -17,7 +18,7 @@ export async function runCodexHost(options={}) {
  let socket=null,channel=null;
  const input=[],pending=new Map(),turns=new Map();
  const evidence={ready:false,turns:[],tools:[],automatic:[],digestDeliveredBeforeDeferred:false};
- const save=()=>{const file=path.join(runtime,'host.json');fs.writeFileSync(file+'.tmp',JSON.stringify(evidence,null,2));fs.renameSync(file+'.tmp',file);};
+ const save=()=>saveHostEvidence(runtime,evidence);
  const consoleInput=createInterface({input:inputStream});
  consoleInput.on('line',line=>{
   if(line==='/quit'){void stop();return;}
