@@ -1,4 +1,10 @@
 # shellcheck shell=bash
+# Shared terminal-outcome admission predicate.
+# Usage: . bin/fm-terminal-outcome-lib.sh
+#
+# fm_terminal_outcome_pending_absent <state-dir> returns 0 when no unresolved
+# terminal outcome is present and 1 with FM_TERMINAL_OUTCOME_ERROR set when the
+# terminal-outcome state is unresolved or unrecognized.
 
 # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_TERMINAL_OUTCOME_ERROR=

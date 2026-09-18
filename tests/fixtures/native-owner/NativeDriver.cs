@@ -14,6 +14,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 
 public static partial class NativeOwner {
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] [return: MarshalAs(UnmanagedType.I1)] static extern bool CreateSymbolicLink(string link,string target,uint flags);
     static string LogonSid() {
         using(var identity=WindowsIdentity.GetCurrent()) {
             foreach(var row in TokenGroups(identity.Token,2))
@@ -127,6 +128,30 @@ public static partial class NativeOwner {
                 if(File.Exists(Path.Combine(sentinelHome,"owner-probe.json"))||File.Exists(Path.Combine(sentinelHome,"state",".lock")))throw new InvalidOperationException("Registry sentinel admission acquired ownership");
             }
             Console.WriteLine("PASS: absent registry is admitted while file and directory sentinels are preserved and refused");
+            foreach(string shape in new [] {"absent","empty-directory","regular-file","nonempty-directory","directory-link","broken-link"}) {
+                string projectsHome=Path.Combine(directory,"projects-path-"+shape),projects=Path.Combine(projectsHome,"projects"),target=Path.Combine(directory,"projects-target-"+shape),body="preserve occupied projects path\n";
+                Directory.CreateDirectory(projectsHome);
+                if(shape=="empty-directory") Directory.CreateDirectory(projects);
+                if(shape=="regular-file") File.WriteAllText(projects,body);
+                if(shape=="nonempty-directory") { Directory.CreateDirectory(projects);File.WriteAllText(Path.Combine(projects,"unlanded.txt"),body); }
+                if(shape=="directory-link") { Directory.CreateDirectory(target);if(!CreateSymbolicLink(projects,target,3))throw new Win32Exception(Marshal.GetLastWin32Error(),"Directory symlink fixture failed"); }
+                if(shape=="broken-link"&&!CreateSymbolicLink(projects,target,3))throw new Win32Exception(Marshal.GetLastWin32Error(),"Broken directory symlink fixture failed");
+                bool expected=shape=="absent"||shape=="empty-directory";
+                foreach(bool launch in new [] {true,false}) {
+                    bool projectsRefused=false;try{EmptyFleet(projectsHome,launch);}catch(InvalidOperationException){projectsRefused=true;}
+                    if(projectsRefused==expected)throw new InvalidOperationException("Projects path shape received the wrong admission result: "+shape);
+                }
+                if(shape=="absent"&&(File.Exists(projects)||Directory.Exists(projects)))throw new InvalidOperationException("Absent projects path changed during admission");
+                if(shape=="empty-directory"&&(!Directory.Exists(projects)||Directory.GetFileSystemEntries(projects).Length!=0))throw new InvalidOperationException("Empty projects directory changed during admission");
+                if(shape=="regular-file"&&File.ReadAllText(projects)!=body)throw new InvalidOperationException("Regular projects path changed during admission");
+                if(shape=="nonempty-directory"&&File.ReadAllText(Path.Combine(projects,"unlanded.txt"))!=body)throw new InvalidOperationException("Nonempty projects directory changed during admission");
+                if((shape=="directory-link"||shape=="broken-link")&&(File.GetAttributes(projects)&FileAttributes.ReparsePoint)==0)throw new InvalidOperationException("Projects directory link changed during admission");
+                if(shape=="directory-link"&&(!Directory.Exists(target)||Directory.GetFileSystemEntries(target).Length!=0))throw new InvalidOperationException("Projects directory link target changed during admission");
+                if(shape=="broken-link"&&Directory.Exists(target))throw new InvalidOperationException("Broken projects directory link target changed during admission");
+                if(shape=="directory-link"||shape=="broken-link") { Directory.CreateDirectory(target);File.WriteAllText(Path.Combine(projects,"target-check"),body);if(File.ReadAllText(Path.Combine(target,"target-check"))!=body)throw new InvalidOperationException("Projects directory link target changed during admission"); }
+                if(File.Exists(Path.Combine(projectsHome,"owner-probe.json"))||File.Exists(Path.Combine(projectsHome,"state",".lock")))throw new InvalidOperationException("Projects path admission acquired ownership");
+            }
+            Console.WriteLine("PASS: only absent and ordinary empty projects paths are admitted unchanged");
             string residual=Path.Combine(directory,"residual"),residualState=Path.Combine(residual,"state"),status=Path.Combine(residualState,"orphan.status");
             Directory.CreateDirectory(residualState);File.WriteAllText(status,"preserve\n");
             bool refused=false;try{EmptyFleet(residual,true);}catch(InvalidOperationException){refused=true;}

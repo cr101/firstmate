@@ -51,9 +51,17 @@ public static partial class NativeOwner {
         catch(FileNotFoundException) { return false; }
         catch(DirectoryNotFoundException) { return false; }
     }
+    static bool ProjectsOccupied(string name) {
+        FileAttributes attributes;
+        try { attributes=File.GetAttributes(name); }
+        catch(FileNotFoundException) { return false; }
+        catch(DirectoryNotFoundException) { return false; }
+        if((attributes&FileAttributes.ReparsePoint)!=0 || (attributes&FileAttributes.Directory)==0) return true;
+        return Directory.GetFileSystemEntries(name).Length!=0;
+    }
     internal static void EmptyFleet(string home,bool launch,string[] provenDeadGenerations=null) {
         string state=Path.Combine(home,"state"),projects=Path.Combine(home,"projects");
-        if((Directory.Exists(projects)&&Directory.GetFileSystemEntries(projects).Length!=0) || PathPresent(Path.Combine(home,"data","secondmates.md")) || PathPresent(Path.Combine(home,"data","projects.md")) || PathPresent(Path.Combine(home,".env")) || PathPresent(Path.Combine(home,"config","x-mode.env")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
+        if(ProjectsOccupied(projects) || PathPresent(Path.Combine(home,"data","secondmates.md")) || PathPresent(Path.Combine(home,"data","projects.md")) || PathPresent(Path.Combine(home,".env")) || PathPresent(Path.Combine(home,"config","x-mode.env")) || (Directory.Exists(Path.Combine(state,"procevent"))&&Directory.GetFileSystemEntries(Path.Combine(state,"procevent")).Length!=0)) throw new InvalidOperationException("This experimental launcher requires an empty fleet; existing fleet records were preserved");
         OwnerAdmission(home,launch,provenDeadGenerations);
     }
     static IntPtr FileHandle(string path, uint access, uint creation) {
