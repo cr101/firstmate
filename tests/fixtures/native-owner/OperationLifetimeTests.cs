@@ -36,7 +36,10 @@ public static partial class NativeOwner {
                         Console.WriteLine("PASS: operation "+(close ? "last-handle close" : "bounded stop")+" stops its deferred worker and preserves an independent process");
                     } finally {
                         if(descendant!=null) descendant.Dispose();
-                        if(child.process!=IntPtr.Zero) { if(WaitForSingleObject(child.process,0)==WAIT_TIMEOUT) TerminateProcess(child.process,125);CloseHandle(child.thread);CloseHandle(child.process); }
+                        if(child.process!=IntPtr.Zero) {
+                            if(WaitForSingleObject(child.process,0)==WAIT_TIMEOUT) {TerminateProcess(child.process,125);WaitForSingleObject(child.process,3000);}
+                            CloseHandle(child.thread);CloseHandle(child.process);
+                        }
                         if(job!=IntPtr.Zero) CloseHandle(job);
                         if(File.Exists(marker)) File.Delete(marker);
                     }

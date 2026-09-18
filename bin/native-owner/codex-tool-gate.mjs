@@ -17,6 +17,14 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
   const seen = new Set();
   const retiredTurns = new Set();
   const deny = reason => ({ success: false, value: { denied: reason } });
+  const recordOffer = (turn, value) => {
+    let turnOffers = offers.get(turn);
+    if (!turnOffers) {
+      turnOffers = new Set();
+      offers.set(turn, turnOffers);
+    }
+    turnOffers.add(value);
+  };
   const valid = params => !closed && isAlive() && params.threadId === primaryThread &&
     typeof params.turnId === 'string' && params.turnId === activeTurn;
 
@@ -54,7 +62,7 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
         // Redelivery is read-only: cancellation or a lost response must not
         // strand pending work or start another native check before handling it.
         if (receipt && !acknowledged) {
-          offers.set(params.turnId, receipt);
+          recordOffer(params.turnId, receipt);
           return { success: true, value: { ...offered } };
         }
       } else if (params.tool === 'fm_notification_ack') {
@@ -89,7 +97,7 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
           acknowledged = false;
           offered = Object.freeze({ message: note.message, receipt, challenge, checkpointExit: note.checkpointExit });
           if (!valid(params)) return deny('wrong-thread-turn-or-replay');
-          offers.set(params.turnId, receipt);
+          recordOffer(params.turnId, receipt);
           return { success: true, value: { ...offered } };
         }
         const result = await operate('ack', { receipt, observed: args.observed });
@@ -107,7 +115,7 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
       }
     },
     wasOffered(thread, turn, expectedReceipt) {
-      return thread === primaryThread && offers.get(turn) === expectedReceipt;
+      return thread === primaryThread && offers.get(turn)?.has(expectedReceipt) === true;
     },
   });
 }

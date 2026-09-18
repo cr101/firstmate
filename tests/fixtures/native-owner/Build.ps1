@@ -15,6 +15,8 @@ $binary = Join-Path $copy 'bin/SessionProbe.exe'
 $sources = @((Join-Path $repo 'bin/native-owner/NativeOwner.cs'), (Join-Path $repo 'bin/native-owner/NativeHomeLease.cs'), (Join-Path $PSScriptRoot 'NativeDriver.cs'), (Join-Path $repo 'bin/native-owner/NativeReceiptJournal.cs'), (Join-Path $PSScriptRoot 'ReceiptTests.cs'))
 $sources += @((Join-Path $repo 'bin/native-owner/NativeOperations.cs'), (Join-Path $repo 'bin/native-owner/NativeAcknowledgementEvidence.cs'), (Join-Path $repo 'bin/native-owner/NativeOperationLifetime.cs'), (Join-Path $PSScriptRoot 'OperationLifetimeTests.cs'))
 Add-Type -Path $sources -OutputAssembly $binary -OutputType ConsoleApplication -ReferencedAssemblies System.dll,System.Core.dll,System.Web.Extensions.dll
+& $binary operation-lifetime-contention
+if ($LASTEXITCODE -ne 0) { throw 'Operation marker publication tests failed' }
 & $binary receipt-tests
 $receiptExit = $LASTEXITCODE
 if ($receiptExit -ne 0) { throw 'Durable receipt lifecycle tests failed' }

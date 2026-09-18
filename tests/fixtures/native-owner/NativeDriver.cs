@@ -439,6 +439,12 @@ public static partial class NativeOwner {
         try {
             int ownerResult;
             if(args.Length==1 && args[0]=="receipt-tests") { ReceiptTests.Run();return TestOperationLifetime(); }
+            if(args.Length==1 && args[0]=="operation-lifetime-tests") return TestOperationLifetime();
+            if(args.Length==1 && args[0]=="operation-lifetime-contention") {
+                string previous=Environment.GetEnvironmentVariable("FM_PROBE_MARKER_CONTENTION");
+                try {Environment.SetEnvironmentVariable("FM_PROBE_MARKER_CONTENTION","1");return TestOperationLifetime();}
+                finally {Environment.SetEnvironmentVariable("FM_PROBE_MARKER_CONTENTION",previous);}
+            }
             if(args.Length==1 && args[0]=="environment-tests") return EnvironmentTests();
             if(TryOwnerCommand(args,out ownerResult)) return ownerResult;
             if(args.Length==1 && args[0]=="privilege-probe") return Client("ordinary-sandbox-command",true);
@@ -446,7 +452,16 @@ public static partial class NativeOwner {
             if(args.Length==2 && args[0]=="sleep") { int ms=int.Parse(args[1]); if(ms<0 || ms>15000) throw new ArgumentException("Sleep must be bounded"); Thread.Sleep(ms); return 0; }
             if(args.Length==2 && args[0]=="operation-parent") {
                 using(var descendant=Process.Start(new ProcessStartInfo(OwnExe,"sleep 10000") {UseShellExecute=false})) {
-                    File.WriteAllText(args[1],descendant.Id.ToString());descendant.WaitForExit();return descendant.ExitCode;
+                    string staging=args[1]+".publishing";
+                    try {
+                        using(var stream=new FileStream(staging,FileMode.CreateNew,FileAccess.Write,FileShare.None))
+                        using(var writer=new StreamWriter(stream,new UTF8Encoding(false))) {
+                            writer.Write(descendant.Id.ToString());writer.Flush();
+                            if(Environment.GetEnvironmentVariable("FM_PROBE_MARKER_CONTENTION")=="1") System.Threading.Thread.Sleep(1000);
+                        }
+                        File.Move(staging,args[1]);
+                    } finally {if(File.Exists(staging)) File.Delete(staging);}
+                    descendant.WaitForExit();return descendant.ExitCode;
                 }
             }
             if(args.Length==3 && args[0]=="lease-check") return LeaseCheck(args[1],args[2]);

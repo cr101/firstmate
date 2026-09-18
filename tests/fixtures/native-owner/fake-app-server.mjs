@@ -22,13 +22,18 @@ export function createFakeAppServer(scenario){
    const frame=JSON.parse(line);
    if(frame.method==='initialized')return;
    if(frame.id===900){
-    if(scenario==='success'){
+    if(scenario==='success'||scenario==='success-then-next-check'){
      const result=JSON.parse(frame.result.contentItems[0].text);
      toolStage='ack';call(901,'fm_notification_ack',{receipt:result.receipt,observed:result.challenge});
     }else complete();
     return;
    }
-   if(frame.id===901){complete();return;}
+   if(frame.id===901){
+    if(scenario==='success-then-next-check'){toolStage='next-check';call(902,'fm_notification_check',{});}
+    else complete();
+    return;
+   }
+   if(frame.id===902){complete();return;}
    if(frame.method==='initialize'){send({id:frame.id,result:{}});return;}
    if(frame.method==='config/read'){send({id:frame.id,result:{config:{features:{apps:false,plugins:false},mcp_servers:{}}}});return;}
    if(frame.method==='thread/start'){
@@ -43,7 +48,7 @@ export function createFakeAppServer(scenario){
      if(scenario==='prose')complete();
      else if(scenario==='denied'){toolStage='check';call(900,'fm_notification_check',{}, {namespace:'other'});}
      else if(scenario==='malformed'){toolStage='check';call(900,'fm_notification_check',null);}
-     else if(scenario==='success'){toolStage='check';call(900,'fm_notification_check',{});}
+     else if(scenario==='success'||scenario==='success-then-next-check'){toolStage='check';call(900,'fm_notification_check',{});}
      else fail(Error('unknown scenario '+scenario));
     });
     return;

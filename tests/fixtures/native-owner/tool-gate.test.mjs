@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {PassThrough} from 'node:stream';
 import {fileURLToPath} from 'node:url';
-import {createNotificationGate} from '../../../bin/native-owner/codex-tool-gate.mjs';
+import {confirmAutomaticNotificationOffer,createNotificationGate} from '../../../bin/native-owner/codex-tool-gate.mjs';
 import {runCodexHost} from '../../../bin/native-owner/codex-host-runtime.mjs';
 import {createFakeAppServer} from './fake-app-server.mjs';
 const message={receipt:'receipt',challenge:'observed',message:'Controlled message',checkpointExit:124};
@@ -83,6 +83,21 @@ test('next cycle works without reauthorizing an earlier receipt',async()=>{
  assert.equal((await gate.handle(ack({turnId:'turn2',callId:'second-ack',arguments:{receipt:'receipt2',observed:'observed'}}))).success,true);
  assert.equal(calls.length,4);
 });
+test('one turn retains each offered receipt without authorizing another turn',async()=>{
+ let cycle=0;
+ const {gate,calls}=fixture(action=>action==='check'?{operationState:'delivered',notification:{...message,receipt:`receipt-${++cycle}`}}:{operationState:'acknowledged'});
+ assert.equal((await gate.handle(check())).value.receipt,'receipt-1');
+ assert.equal((await gate.handle(ack({callId:'ack-first',arguments:{receipt:'receipt-1',observed:'observed'}}))).success,true);
+ assert.equal((await gate.handle(check({callId:'check-second'}))).value.receipt,'receipt-2');
+ gate.endTurn('primary','turn');
+ assert.equal(confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt-1'),true);
+ assert.equal(confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt-2'),true);
+ assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'turn',status:'completed'},'receipt-unoffered'));
+ assert.throws(()=>confirmAutomaticNotificationOffer(gate,'primary',{id:'wrong-turn',status:'completed'},'receipt-1'));
+ gate.beginTurn('primary','next');
+ assert.equal((await gate.handle(check({turnId:'next',callId:'redeliver-second'}))).value.receipt,'receipt-2');
+ assert.equal(calls.length,3);
+});
 test('closed gate cannot be rebound to another thread',()=>{
  const {gate}=fixture();assert.throws(()=>gate.beginTurn('foreign','turn2'));gate.close();assert.throws(()=>gate.beginTurn('primary','turn2'));
 });
@@ -129,7 +144,8 @@ async function hostScenario(scenario,cycles=1){
   if(action==='status')return {operationState:'ready'};
   if(action==='result'){
    if(ackPending){ackPending=false;cycle++;return {operationState:'acknowledged'};}
-   return {operationState:'delivered',notification:notification(Math.min(cycle,cycles-1))};
+   const available=scenario==='success-then-next-check'?2:cycles;
+   return {operationState:'delivered',notification:notification(Math.min(cycle,available-1))};
   }
   if(action==='ack'){
    assert.deepEqual(extra,{receipt:notification(cycle).receipt,observed:'observed'});
@@ -144,12 +160,13 @@ async function hostScenario(scenario,cycles=1){
    env:{...process.env,FM_PROBE_HOME:runtime,FM_PROBE_CODE_ROOT:repo,FM_HOME:home,FM_PROBE_SESSION:'session',FM_PROBE_NONCE:'nonce'},
    input,output,error,native,mcpServerNames:[],spawnAppServer:()=>createFakeAppServer(scenario),installSignalHandlers:false,
    afterAutomaticTurn:({evidence})=>{
+    if(scenario==='success-then-next-check')return false;
     if(evidence.automatic.length===cycles)setTimeout(()=>input.write('/quit\n'),20);
     return true;
    },
   });
  }catch(errorValue){failure=errorValue;}
- return {result,failure,acknowledgements,shutdowns,afterShutdown,host:JSON.parse(fs.readFileSync(path.join(runtime,'host.json'),'utf8'))};
+ return {result,failure,acknowledgements,shutdowns,afterShutdown,pendingReceipt:notification(cycle).receipt,host:JSON.parse(fs.readFileSync(path.join(runtime,'host.json'),'utf8'))};
 }
 
 for(const scenario of ['prose','denied','malformed'])test(`actual host loop preserves a ${scenario} completed turn`,async()=>{
@@ -173,6 +190,19 @@ test('actual host loop suppresses only the exact successfully offered receipt',a
  assert.deepEqual(result.host.turns.map(turn=>turn.status),['completed']);
  assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
   ['fm_notification_check',true],['fm_notification_ack',true],
+ ]);
+});
+
+test('actual host loop preserves the initiating offer when the turn reads the next receipt',async()=>{
+ const result=await hostScenario('success-then-next-check');
+ assert.equal(result.failure,undefined);
+ assert.equal(result.acknowledgements,1);
+ assert.equal(result.pendingReceipt,'receipt-2');
+ assert.equal(result.shutdowns,1);
+ assert.equal(result.afterShutdown,0);
+ assert.deepEqual(result.result.automatic.map(item=>[item.receipt,item.outcome]),[['receipt','offered']]);
+ assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
+  ['fm_notification_check',true],['fm_notification_ack',true],['fm_notification_check',true],
  ]);
 });
 
