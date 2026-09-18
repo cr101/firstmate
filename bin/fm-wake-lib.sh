@@ -2586,6 +2586,7 @@ fm_wake_ack_evidence_load() {  # <opaque-token>
     return 1
   fi
   rm -f -- "$notes_derived" "$expected_notes"
+  return 0
 }
 
 fm_wake_ack_evidence_native_recovery() {  # <opaque-token> <marker>

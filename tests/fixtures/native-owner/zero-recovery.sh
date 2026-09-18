@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: zero-recovery.sh present|acknowledge|append <home> [generation]
+# Usage: zero-recovery.sh present|acknowledge|append|load-cleanup-failure <home> [generation-or-token]
 set -eu
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 export FM_HOME
@@ -30,6 +30,21 @@ case "${1:-}" in
   append)
     . bin/fm-wake-lib.sh
     fm_wake_append check later-notification 'later notification remains pending'
+    ;;
+  load-cleanup-failure)
+    token=${3:?}
+    load_rc=0
+    . bin/fm-wake-lib.sh
+    rm() {
+      case "$*" in
+        *fm-wake-ack-derived.*fm-wake-ack-expected.*) return 1 ;;
+        *) command rm "$@" ;;
+      esac
+    }
+    fm_wake_ack_evidence_load "$token" || load_rc=$?
+    [ "$load_rc" = 0 ]
+    [ "$FM_WAKE_ACK_EVIDENCE_CUTOFF" = 1 ]
+    fm_wake_ack_evidence_clear
     ;;
   *) exit 2 ;;
 esac

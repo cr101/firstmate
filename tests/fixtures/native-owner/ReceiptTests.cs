@@ -96,6 +96,11 @@ public static class ReceiptTests {
     }
     public static int Run() {
         OwnerProbeLinkCase();
+        Case("validated acknowledgement evidence survives scratch cleanup failure",lease=>{
+            Targets(lease);
+            var payload=OwnerPayload(lease,"cleanup-failure");
+            ZeroRecovery(lease,"load-cleanup-failure",(string)payload["ownerEvidence"]);
+        });
         Case("one writer and unobserved acknowledgement refusal",lease=>{
             Targets(lease);
             using(var journal=new NativeReceiptJournal(lease,A)) {
