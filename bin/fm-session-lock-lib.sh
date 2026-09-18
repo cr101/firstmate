@@ -183,10 +183,15 @@ fm_win_boundary_applies() {
 
 # Strip the namespace tag from $1, or return 1 when $1 is not a tagged pid.
 fm_win_untag_pid() {  # <pid>
+  local winpid
   case "$1" in
-    "$FM_WIN_PID_PREFIX"[0-9]*) printf '%s' "${1#"$FM_WIN_PID_PREFIX"}"; return 0 ;;
+    "$FM_WIN_PID_PREFIX"*) winpid=${1#"$FM_WIN_PID_PREFIX"} ;;
+    *) return 1 ;;
   esac
-  return 1
+  case "$winpid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$winpid"
 }
 
 # True when $1 is a well-formed session-lock identity: a local pid, a tagged
@@ -205,7 +210,9 @@ fm_session_pid_valid() {  # <value>
       [ "${#native_id}" -eq 32 ] || return 1
       case "$native_id" in *[!0-9a-f]*) return 1 ;; esac
       return 0 ;;
-    "$FM_WIN_PID_PREFIX"[0-9]*) return 0 ;;
+    "$FM_WIN_PID_PREFIX"*)
+      fm_win_untag_pid "$1" >/dev/null
+      return ;;
     ''|*[!0-9]*) return 1 ;;
   esac
   return 0

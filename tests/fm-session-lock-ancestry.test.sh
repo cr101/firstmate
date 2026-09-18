@@ -410,12 +410,38 @@ test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock() {
 
   # Still fail closed on the shapes a torn or hand-edited lock produces, and on
   # a bare tag carrying no pid at all.
-  for bad in '' 'win:' 'win:abc' 'abc' '70 0' '-1'; do
+  for bad in '' 'win:' 'win:abc' 'win:123oops' 'win:1:2' 'abc' '70 0' '-1'; do
     if lib_eval "$fakebin" "fm_session_pid_valid '$bad'"; then
       fail "the malformed lock value '$bad' was accepted as a usable identity"
     fi
+    case "$bad" in
+      win:*)
+        if lib_eval "$fakebin" "fm_win_untag_pid '$bad'"; then
+          fail "the malformed lock value '$bad' was reduced to a Windows pid"
+        fi
+        ;;
+    esac
   done
   pass "session-lock: a published identity is accepted by every gate that reads the lock"
+}
+
+test_native_admission_preserves_a_partially_numeric_windows_identity() {
+  local dir out rc
+  dir="$TMP_ROOT/win-partial-identity"
+  mkdir -p "$dir/state"
+  printf '%s\n' 'win:123oops' > "$dir/state/.lock"
+
+  set +e
+  out=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ROOT/bin/fm-lock.sh" native-admission-predicate 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "native admission accepted a partially numeric Windows identity"
+  [ "$(cat "$dir/state/.lock")" = 'win:123oops' ] || fail "native admission changed an ambiguous Windows identity"
+  case "$out" in
+    *'session lock owner is unrecognized; native launch refused'*) ;;
+    *) fail "native admission did not identify the malformed owner: $out" ;;
+  esac
+  pass "session-lock: native admission preserves a partially numeric Windows identity"
 }
 
 test_cygwin_ps_without_o_still_resolves_a_local_harness() {
@@ -691,6 +717,7 @@ test_windows_session_is_identified_from_its_published_pid
 test_windows_published_pid_is_confirmed_before_it_is_trusted
 test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
+test_native_admission_preserves_a_partially_numeric_windows_identity
 test_cygwin_ps_without_o_still_resolves_a_local_harness
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home

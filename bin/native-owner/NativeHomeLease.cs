@@ -42,18 +42,18 @@ public sealed class NativeHomeLease : IDisposable {
         return full;
     }
     static string Filename(string home) { return Path.Combine(ValidateHomePath(home),"owner-probe.json"); }
-    static void ValidateFile(FileStream stream,SecurityIdentifier user) {
+    internal static void ValidateFile(FileStream stream,SecurityIdentifier user,string resource) {
         var access=stream.GetAccessControl();
-        if(!access.AreAccessRulesProtected || !access.GetOwner(typeof(SecurityIdentifier)).Equals(user)) throw new IOException("Owner record security differs; preserved");
-        foreach(FileSystemAccessRule rule in access.GetAccessRules(true,true,typeof(SecurityIdentifier))) if(rule.AccessControlType==AccessControlType.Allow && !rule.IdentityReference.Equals(user)) throw new IOException("Owner record grants unexpected access; preserved");
+        if(!access.AreAccessRulesProtected || !access.GetOwner(typeof(SecurityIdentifier)).Equals(user)) throw new IOException(resource+" security differs; preserved");
+        foreach(FileSystemAccessRule rule in access.GetAccessRules(true,true,typeof(SecurityIdentifier))) if(rule.AccessControlType==AccessControlType.Allow && !rule.IdentityReference.Equals(user)) throw new IOException(resource+" grants unexpected access; preserved");
         Info info;
-        if(!GetFileInformationByHandle(stream.SafeFileHandle.DangerousGetHandle(),out info) || info.links!=1 || (info.attributes&0x400)!=0) throw new IOException("Owner record file identity is unsafe; preserved");
+        if(!GetFileInformationByHandle(stream.SafeFileHandle.DangerousGetHandle(),out info) || info.links!=1 || (info.attributes&0x400)!=0) throw new IOException(resource+" file identity is unsafe; preserved");
     }
     static FileStream OpenExisting(string name,FileSystemRights rights,FileAccess access,FileShare share) {
         FileAttributes attributes=File.GetAttributes(name);
         if((attributes&FileAttributes.ReparsePoint)!=0 || (attributes&FileAttributes.Directory)!=0) throw new IOException("Owner record path is unsafe; preserved");
         FileStream stream=rights==0 ? new FileStream(name,FileMode.Open,access,share) : new FileStream(name,FileMode.Open,rights,share,4096,FileOptions.None);
-        try { ValidateFile(stream,WindowsIdentity.GetCurrent().User);return stream; }
+        try { ValidateFile(stream,WindowsIdentity.GetCurrent().User,"Owner record");return stream; }
         catch { stream.Dispose();throw; }
     }
     static Dictionary<string,object> Read(Stream stream) {
@@ -117,7 +117,7 @@ public sealed class NativeHomeLease : IDisposable {
         try {
             try { file=new FileStream(name,FileMode.CreateNew,FileSystemRights.Read|FileSystemRights.Write,FileShare.Read,4096,FileOptions.None,security);created=true; }
             catch(IOException) { file=OpenExisting(name,FileSystemRights.Read|FileSystemRights.Write,0,FileShare.Read); }
-            ValidateFile(file,user);
+            ValidateFile(file,user,"Owner record");
             if(!created && file.Length==0) throw new InvalidOperationException("Empty existing owner record is ambiguous; preserved");
             if(file.Length>0) {
                 var previous=Read(file);

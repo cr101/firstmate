@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
@@ -18,20 +17,8 @@ public sealed class NativeReceiptJournal : IDisposable {
     object latestAcknowledgementEvidence;
     FileStream file;
     const long Limit = 16 * 1024 * 1024;
-    [StructLayout(LayoutKind.Sequential)] struct Info {
-        public uint attributes, createdLow, createdHigh, accessLow, accessHigh, writeLow, writeHigh;
-        public uint volume, sizeHigh, sizeLow, links, indexHigh, indexLow;
-    }
-    [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetFileInformationByHandle(IntPtr handle, out Info info);
     NativeReceiptJournal(string selectedHome) {
         home=Path.GetFullPath(selectedHome).TrimEnd('\\','/');
-    }
-    static void ValidateFile(FileStream stream,SecurityIdentifier user) {
-        var access=stream.GetAccessControl();
-        if(!access.AreAccessRulesProtected || !access.GetOwner(typeof(SecurityIdentifier)).Equals(user)) throw new IOException("Receipt journal security differs; preserved");
-        foreach(FileSystemAccessRule rule in access.GetAccessRules(true,true,typeof(SecurityIdentifier))) if(rule.AccessControlType==AccessControlType.Allow && !rule.IdentityReference.Equals(user)) throw new IOException("Receipt journal grants unexpected access; preserved");
-        Info info;
-        if(!GetFileInformationByHandle(stream.SafeFileHandle.DangerousGetHandle(),out info) || info.links!=1 || (info.attributes&0x400)!=0) throw new IOException("Receipt journal file identity is unsafe");
     }
     void Load(FileStream stream) {
         if(stream.Length>Limit || stream.Length==0) throw new IOException("Receipt journal is empty or oversized; preserved");
@@ -50,7 +37,7 @@ public sealed class NativeReceiptJournal : IDisposable {
         if((attributes&FileAttributes.ReparsePoint)!=0 || (attributes&FileAttributes.Directory)!=0) throw new IOException("Receipt journal path is unsafe; preserved");
         var parser=new NativeReceiptJournal(home);
         using(var stream=new FileStream(name,FileMode.Open,FileAccess.Read,FileShare.ReadWrite)) {
-            ValidateFile(stream,WindowsIdentity.GetCurrent().User);
+            NativeHomeLease.ValidateFile(stream,WindowsIdentity.GetCurrent().User,"Receipt journal");
             parser.Load(stream);
         }
         return parser.latestAcknowledgementEvidence;
@@ -75,7 +62,7 @@ public sealed class NativeReceiptJournal : IDisposable {
                 if((File.GetAttributes(name)&FileAttributes.ReparsePoint)!=0) throw new IOException("Receipt journal is a reparse point");
                 file=new FileStream(name,FileMode.Open,FileSystemRights.Read|FileSystemRights.Write,FileShare.Read,4096,FileOptions.None,security);
             }
-            ValidateFile(file,user);
+            NativeHomeLease.ValidateFile(file,user,"Receipt journal");
             if(!created) Load(file);
             Append("session",null,null);
         } catch { Dispose();throw; }
