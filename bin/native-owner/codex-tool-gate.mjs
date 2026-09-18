@@ -25,6 +25,8 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
     }
     turnOffers.add(value);
   };
+  const wasOffered = (thread, turn, expectedReceipt) =>
+    thread === primaryThread && offers.get(turn)?.has(expectedReceipt) === true;
   const valid = params => !closed && isAlive() && params.threadId === primaryThread &&
     typeof params.turnId === 'string' && params.turnId === activeTurn;
 
@@ -67,7 +69,8 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
         }
       } else if (params.tool === 'fm_notification_ack') {
         if (Object.keys(args).sort().join(',') !== 'observed,receipt' || !receipt ||
-            args.receipt !== receipt || args.observed !== challenge) {
+            args.receipt !== receipt || args.observed !== challenge ||
+            !wasOffered(params.threadId, params.turnId, receipt)) {
           return deny('wrong-receipt-or-unhandled-notification');
         }
         if (acknowledged) return deny('receipt-already-consumed');
@@ -114,9 +117,7 @@ export function createNotificationGate({ primaryThread, operate, isAlive }) {
         busy = false;
       }
     },
-    wasOffered(thread, turn, expectedReceipt) {
-      return thread === primaryThread && offers.get(turn)?.has(expectedReceipt) === true;
-    },
+    wasOffered,
   });
 }
 

@@ -124,6 +124,16 @@ test('notification arriving after cancellation remains available next turn',asyn
  const recovered=await gate.handle(check({turnId:'next',callId:'redelivery'}));
  assert.equal(recovered.success,true);assert.equal(recovered.value.receipt,'receipt');assert.equal(calls.length,1);
 });
+test('a later turn must reread a pending receipt before acknowledgement',async()=>{
+ const {gate,calls}=fixture();assert.equal((await gate.handle(check())).success,true);
+ gate.endTurn('primary','turn');gate.beginTurn('primary','next');
+ const denied=await gate.handle(ack({turnId:'next',callId:'direct-ack'}));
+ assert.deepEqual(denied,{success:false,value:{denied:'wrong-receipt-or-unhandled-notification'}});assert.equal(calls.length,1);
+ assert.equal((await gate.handle(check({turnId:'next',callId:'redelivery'}))).success,true);assert.equal(calls.length,1);
+ assert.equal((await gate.handle(ack({turnId:'next',callId:'recovered-ack'}))).success,true);
+ gate.endTurn('primary','next');assert.equal(confirmAutomaticNotificationOffer(gate,'primary',{id:'next',status:'completed'},'receipt'),true);
+ assert.deepEqual(calls,[['check'],['ack',{receipt:'receipt',observed:'observed'}]]);
+});
 test('operation failure is not reported as success and cannot be blindly retried',async()=>{
   const {gate,calls}=fixture(()=>{throw Error('partial operation requires reconciliation');});
   assert.equal((await gate.handle(check())).success,false);assert.equal((await gate.handle(check({callId:'retry'}))).success,false);assert.equal(calls.length,1);
@@ -161,6 +171,7 @@ async function hostScenario(scenario,cycles=1){
    input,output,error,native,mcpServerNames:[],spawnAppServer:()=>createFakeAppServer(scenario),installSignalHandlers:false,
    afterAutomaticTurn:({evidence})=>{
     if(scenario==='success-then-next-check')return false;
+    if(scenario==='interrupted-direct-ack')return evidence.automatic.length<2;
     if(evidence.automatic.length===cycles)setTimeout(()=>input.write('/quit\n'),20);
     return true;
    },
@@ -203,6 +214,21 @@ test('actual host loop preserves the initiating offer when the turn reads the ne
  assert.deepEqual(result.result.automatic.map(item=>[item.receipt,item.outcome]),[['receipt','offered']]);
  assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
   ['fm_notification_check',true],['fm_notification_ack',true],['fm_notification_check',true],
+ ]);
+});
+
+test('actual host loop requires a reread after an interrupted offer',async()=>{
+ const result=await hostScenario('interrupted-direct-ack');
+ assert.equal(result.failure,undefined);
+ assert.equal(result.acknowledgements,1);
+ assert.equal(result.shutdowns,1);
+ assert.equal(result.afterShutdown,0);
+ assert.deepEqual(result.result.automatic.map(item=>[item.status,item.outcome]),[
+  ['interrupted','interrupted'],['completed','offered'],
+ ]);
+ assert.deepEqual(result.host.tools.map(tool=>[tool.tool,tool.success]),[
+  ['fm_notification_check',true],['fm_notification_ack',false],
+  ['fm_notification_check',true],['fm_notification_ack',true],
  ]);
 });
 
