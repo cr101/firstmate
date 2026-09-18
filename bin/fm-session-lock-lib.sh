@@ -148,8 +148,9 @@ FM_WIN_PID_PREFIX='win:'
 # Native routing is selected by durable home records, never an inherited role.
 FM_NATIVE_OWNER_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-native-owner.exe"
 fm_native_owner_selected() {
-  local state="${FM_STATE_OVERRIDE:-${FM_HOME:-}/state}" value
-  [ -f "${state%/state}/owner-probe.json" ] && return 0
+  local state="${FM_STATE_OVERRIDE:-${FM_HOME:-}/state}" probe value
+  probe="${state%/state}/owner-probe.json"
+  if [ -e "$probe" ] || [ -L "$probe" ]; then return 0; fi
   value=$(cat "$state/.lock" 2>/dev/null || true)
   case "$value" in native:*) return 0 ;; esac
   return 1
@@ -399,10 +400,9 @@ fm_harness_pid_excludes() {
 # lock, a malformed lock, a lock held by a harness outside this ancestry, or an
 # ancestry that cannot be resolved all refuse ownership.
 fm_session_lock_owned_by_self() {
-  local state=$1 lock_pid pids pid native_state
+  local state=$1 lock_pid pids pid
   if fm_win_boundary_applies && FM_STATE_OVERRIDE="$state" fm_native_owner_selected; then
-    native_state=$(cygpath -w "$state") || return 1
-    MSYS2_ARG_CONV_EXCL='*' "$FM_NATIVE_OWNER_BIN" owner owns "$native_state"
+    FM_STATE_OVERRIDE="$state" fm_native_owner_call owns
     return
   fi
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)

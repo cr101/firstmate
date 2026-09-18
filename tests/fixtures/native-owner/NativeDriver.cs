@@ -113,6 +113,20 @@ public static partial class NativeOwner {
             if(File.Exists(injected)||leaked.Length!=4)throw new InvalidOperationException("Denied inherited environment reached the native host");
             foreach(string key in leaked)if(!key.StartsWith("FM_PROBE_",StringComparison.Ordinal))throw new InvalidOperationException("Unexpected inherited environment reached the native host");
             Console.WriteLine("PASS: inherited Windows environment denylist is case-insensitive");
+            foreach(string shape in new [] {"absent","regular","directory"}) {
+                string sentinelHome=Path.Combine(directory,"registry-sentinel-"+shape),registry=Path.Combine(sentinelHome,"data","projects.md");
+                Directory.CreateDirectory(sentinelHome);
+                if(shape=="regular") { Directory.CreateDirectory(Path.GetDirectoryName(registry));File.WriteAllText(registry,"preserve registry\n"); }
+                if(shape=="directory") Directory.CreateDirectory(registry);
+                foreach(bool launch in new [] {true,false}) {
+                    bool sentinelRefused=false;try{EmptyFleet(sentinelHome,launch);}catch(InvalidOperationException){sentinelRefused=true;}
+                    if(sentinelRefused!=(shape!="absent"))throw new InvalidOperationException("Registry sentinel shape received the wrong admission result: "+shape);
+                }
+                if(shape=="regular"&&File.ReadAllText(registry)!="preserve registry\n")throw new InvalidOperationException("Regular registry sentinel changed during admission");
+                if(shape=="directory"&&!Directory.Exists(registry))throw new InvalidOperationException("Directory registry sentinel changed during admission");
+                if(File.Exists(Path.Combine(sentinelHome,"owner-probe.json"))||File.Exists(Path.Combine(sentinelHome,"state",".lock")))throw new InvalidOperationException("Registry sentinel admission acquired ownership");
+            }
+            Console.WriteLine("PASS: absent registry is admitted while file and directory sentinels are preserved and refused");
             string residual=Path.Combine(directory,"residual"),residualState=Path.Combine(residual,"state"),status=Path.Combine(residualState,"orphan.status");
             Directory.CreateDirectory(residualState);File.WriteAllText(status,"preserve\n");
             bool refused=false;try{EmptyFleet(residual,true);}catch(InvalidOperationException){refused=true;}

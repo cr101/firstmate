@@ -301,6 +301,13 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$mode" = W ]; then
   [ "${FM_TEST_WIN_QUERY_EXIT:-0}" = 0 ] || exit "$FM_TEST_WIN_QUERY_EXIT"
+  if [ -n "${FM_TEST_WIN_FAIL_ONCE_COUNTER:-}" ]; then
+    count=$(cat "$FM_TEST_WIN_FAIL_ONCE_COUNTER" 2>/dev/null || true)
+    count=${count:-0}
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$FM_TEST_WIN_FAIL_ONCE_COUNTER"
+    [ "$count" -ne 1 ] || exit 7
+  fi
   printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND'
   [ -n "${FM_TEST_WIN_TABLE:-}" ] && printf '%s\n' "$FM_TEST_WIN_TABLE"
   exit 0
@@ -347,7 +354,7 @@ test_windows_session_is_identified_from_its_published_pid() {
 }
 
 test_windows_query_outcomes_reach_every_owner_gate() {
-  local dir fakebin case_dir out rc
+  local dir fakebin case_dir counter out rc
   dir="$TMP_ROOT/win-query-outcomes"
   fakebin=$(cygwin_fakebin "$dir")
 
@@ -403,11 +410,40 @@ test_windows_query_outcomes_reach_every_owner_gate() {
   set -e
   [ "$rc" -ne 0 ] || fail "ordinary acquisition replaced an owner after a failed Windows query"
   [ "$(cat "$case_dir/state/.lock")" = 'win:7204' ] || fail "failed Windows query changed the recorded owner"
+
+  case_dir="$dir/fail-once"
+  counter="$case_dir/query-count"
+  mkdir -p "$case_dir/state"
+  printf '%s\n' 'win:7204' > "$case_dir/state/.lock"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_WIN_FAIL_ONCE_COUNTER="$counter" "$ROOT/bin/fm-lock.sh" status)
+  [ "$out" = 'lock: held by owner with unconfirmed health (pid win:7204)' ] \
+    || fail "transient Windows query failure was reclassified by status: $out"
+  [ "$(cat "$counter")" = 1 ] || fail "status queried one owner decision more than once"
+
+  rm -f "$counter"
+  set +e
+  PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_WIN_FAIL_ONCE_COUNTER="$counter" "$ROOT/bin/fm-lock.sh" native-admission-predicate >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "native admission accepted an owner after a transient Windows query failure"
+  [ "$(cat "$counter")" = 1 ] || fail "native admission queried one owner decision more than once"
+
+  rm -f "$counter"
+  set +e
+  PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_CYG_PPID=700 FM_TEST_WIN_FAIL_ONCE_COUNTER="$counter" "$ROOT/bin/fm-lock.sh" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "ordinary acquisition replaced an owner after a transient Windows query failure"
+  [ "$(cat "$case_dir/state/.lock")" = 'win:7204' ] || fail "transient Windows query failure changed the recorded owner"
+  [ "$(cat "$counter")" = 1 ] || fail "ordinary acquisition queried one owner decision more than once"
   pass "session-lock: Windows query presence, absence, and failure remain distinct through status and acquisition"
 }
 
 test_harness_detection_uses_shared_native_selection() {
-  local dir bindir fakebin home out
+  local dir bindir fakebin home out shape
   dir="$TMP_ROOT/native-harness-selection"
   bindir="$dir/bin"
   home="$dir/home"
@@ -440,12 +476,20 @@ SH
   [ "$out" = unknown ] || fail "native lock without authenticated proof fell through to a marker: $out"
 
   rm "$home/state/.lock"
+  for shape in regular directory broken-link; do
+    case "$shape" in
+      regular) printf '%s\n' '{}' > "$home/owner-probe.json" ;;
+      directory) mkdir "$home/owner-probe.json" ;;
+      broken-link) ln -s "$home/missing-owner-probe" "$home/owner-probe.json" ;;
+    esac
+    out=$(env -u CLAUDECODE -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+      -u GEMINI_CLI -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI -u FM_OMP_HARNESS \
+      -u FM_PI_HARNESS -u FM_STATE_OVERRIDE PATH="$fakebin:$PATH" FM_HOME="$home" \
+      PI_CODING_AGENT=true "$bindir/fm-harness.sh")
+    [ "$out" = unknown ] || fail "$shape native probe fell through to a marker: $out"
+    case "$shape" in directory) rmdir "$home/owner-probe.json" ;; *) rm "$home/owner-probe.json" ;; esac
+  done
   printf '%s\n' '{}' > "$home/owner-probe.json"
-  out=$(env -u CLAUDECODE -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
-    -u GEMINI_CLI -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI -u FM_OMP_HARNESS \
-    -u FM_PI_HARNESS -u FM_STATE_OVERRIDE PATH="$fakebin:$PATH" FM_HOME="$home" \
-    PI_CODING_AGENT=true "$bindir/fm-harness.sh")
-  [ "$out" = unknown ] || fail "unusable native probe fell through to a marker: $out"
   out=$(env -u CLAUDECODE -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
     -u GEMINI_CLI -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI -u FM_OMP_HARNESS \
     -u FM_PI_HARNESS -u FM_STATE_OVERRIDE PATH="$fakebin:$PATH" FM_HOME="$home" \
@@ -836,6 +880,46 @@ test_native_state_contract() (
   pass "native identity routing preserves unknown exclusion without certifying health"
 )
 
+test_native_owns_uses_shared_dispatch() (
+  local dir fakebin state ambient args rc expected
+  dir="$TMP_ROOT/native-owns-dispatch"
+  fakebin="$dir/fakebin"
+  state="$dir/selected/state"
+  ambient="$dir/ambient/state"
+  mkdir -p "$fakebin" "$state" "$ambient"
+  printf '%s\n' '{}' > "$dir/selected/owner-probe.json"
+  cat > "$fakebin/uname" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' MINGW64_NT-fixture
+SH
+  cat > "$fakebin/cygpath" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${@: -1}"
+SH
+  cat > "$dir/fm-native-owner.exe" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$FM_TEST_NATIVE_ARGS"
+exit "$FM_TEST_NATIVE_EXIT"
+SH
+  chmod +x "$fakebin/uname" "$fakebin/cygpath" "$dir/fm-native-owner.exe"
+  # shellcheck source=bin/fm-session-lock-lib.sh
+  . "$LIB"
+  FM_NATIVE_OWNER_BIN="$dir/fm-native-owner.exe"
+  FM_HOME="$dir/ambient"
+  FM_STATE_OVERRIDE="$ambient"
+  args="$dir/arguments"
+  for expected in 0 2; do
+    rc=0
+    PATH="$fakebin:$PATH" FM_TEST_NATIVE_ARGS="$args" FM_TEST_NATIVE_EXIT="$expected" \
+      fm_session_lock_owned_by_self "$state" || rc=$?
+    [ "$rc" -eq "$expected" ] || fail "native owns changed verifier exit $expected to $rc"
+    [ "$(wc -l < "$args" | tr -d ' ')" -eq 3 ] && [ "$(sed -n '1p' "$args")" = owner ] \
+      && [ "$(sed -n '2p' "$args")" = owns ] && [ "$(sed -n '3p' "$args")" = "$state" ] \
+      || fail "native owns did not preserve the selected state override"
+  done
+  pass "native self-ownership delegates through the shared owner command"
+)
+
 test_native_status_and_acquisition_behavior() {
   local dir bindir fakebin identity out rc
   dir="$TMP_ROOT/native-status"
@@ -912,6 +996,7 @@ test_numeric_ancestry_interfaces_reject_native_identity() {
 }
 
 test_native_state_contract
+test_native_owns_uses_shared_dispatch
 test_native_status_and_acquisition_behavior
 test_numeric_ancestry_interfaces_reject_native_identity
 test_version_named_session_is_identified_on_both_platforms

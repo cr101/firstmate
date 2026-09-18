@@ -35,6 +35,7 @@ fm_lock_holder_label() {
 }
 
 fm_lock_conflict_message() {
+  local owner_rc
   if ! fm_session_pid_valid "$1"; then
     printf 'error: session lock owner is unrecognized; operate read-only until resolved'
     return 0
@@ -45,8 +46,10 @@ fm_lock_conflict_message() {
       *) printf 'error: another live firstmate session holds the lock (pid %s); operate read-only until resolved' "$1" ;;
     esac
     return 0
+  else
+    owner_rc=$?
   fi
-  if fm_harness_pid_excludes "$1"; then
+  if [ "$owner_rc" -ne 1 ]; then
     printf 'error: another firstmate session may hold the lock (%s); operate read-only until resolved' "$(fm_lock_holder_label "$1")"
     return 0
   fi
@@ -99,12 +102,8 @@ if [ "${1:-}" = "native-admission-predicate" ]; then
       fi
       ;;
   esac
-  if fm_harness_pid_excludes "$old"; then
-    if conflict=$(fm_lock_conflict_message "$old"); then
-      echo "$conflict" >&2
-    else
-      echo "error: another firstmate session may hold the lock; native launch refused" >&2
-    fi
+  if conflict=$(fm_lock_conflict_message "$old"); then
+    echo "$conflict" >&2
     exit 1
   fi
   exit 0
@@ -123,15 +122,20 @@ if [ "${1:-}" = "status" ]; then
   }
   if ! fm_session_pid_valid "$old"; then
     echo "lock: held by unrecognized owner with unknown health"
-  elif fm_harness_pid_alive "$old"; then
-    echo "lock: held by live $(fm_lock_owner_label "$old")"
-  elif fm_harness_pid_excludes "$old"; then
-    case "$old" in
-      native:*) echo "lock: held by native owner with unconfirmed health $old" ;;
-      *) echo "lock: held by owner with unconfirmed health ($(fm_lock_holder_label "$old"))" ;;
-    esac
   else
-    echo "lock: stale ($(fm_lock_holder_label "$old") dead or not a harness)"
+    if fm_harness_pid_alive "$old"; then
+      echo "lock: held by live $(fm_lock_owner_label "$old")"
+    else
+      owner_rc=$?
+      if [ "$owner_rc" -eq 1 ]; then
+        echo "lock: stale ($(fm_lock_holder_label "$old") dead or not a harness)"
+      else
+        case "$old" in
+          native:*) echo "lock: held by native owner with unconfirmed health $old" ;;
+          *) echo "lock: held by owner with unconfirmed health ($(fm_lock_holder_label "$old"))" ;;
+        esac
+      fi
+    fi
   fi
   exit 0
 fi
