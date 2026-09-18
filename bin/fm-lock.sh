@@ -121,7 +121,9 @@ if [ "${1:-}" = "status" ]; then
     echo "lock: unreadable"
     exit 0
   }
-  if fm_harness_pid_alive "$old"; then
+  if ! fm_session_pid_valid "$old"; then
+    echo "lock: held by unrecognized owner with unknown health"
+  elif fm_harness_pid_alive "$old"; then
     echo "lock: held by live $(fm_lock_owner_label "$old")"
   elif fm_harness_pid_excludes "$old"; then
     echo "lock: held by native owner with unconfirmed health $old"

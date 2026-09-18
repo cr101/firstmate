@@ -503,6 +503,44 @@ SH
   pass "session-lock: ordinary acquisition preserves malformed Windows identities at both checks"
 }
 
+test_status_distinguishes_malformed_windows_identities() {
+  local dir fakebin bad case_dir out index
+  dir="$TMP_ROOT/win-malformed-status"
+  fakebin=$(cygwin_fakebin "$dir")
+  index=0
+
+  for bad in 'win:' 'win:abc' 'win:123oops' 'win:1:2'; do
+    index=$((index + 1))
+    case_dir="$dir/malformed-$index"
+    mkdir -p "$case_dir/state"
+    printf '%s\n' "$bad" > "$case_dir/state/.lock"
+
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+      FM_TEST_WIN_TABLE="$WIN_TABLE" "$ROOT/bin/fm-lock.sh" status)
+    [ "$out" = 'lock: held by unrecognized owner with unknown health' ] \
+      || fail "status classified malformed Windows identity '$bad' as known: $out"
+    [ "$(cat "$case_dir/state/.lock")" = "$bad" ] \
+      || fail "status changed malformed Windows identity '$bad'"
+  done
+
+  case_dir="$dir/live"
+  mkdir -p "$case_dir/state"
+  printf '%s\n' 'win:7204' > "$case_dir/state/.lock"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" "$ROOT/bin/fm-lock.sh" status)
+  [ "$out" = 'lock: held by live harness pid win:7204' ] \
+    || fail "status lost a valid live Windows owner: $out"
+
+  case_dir="$dir/dead"
+  mkdir -p "$case_dir/state"
+  printf '%s\n' 'win:9999' > "$case_dir/state/.lock"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" "$ROOT/bin/fm-lock.sh" status)
+  [ "$out" = 'lock: stale (pid win:9999 dead or not a harness)' ] \
+    || fail "status lost a valid dead Windows owner: $out"
+  pass "session-lock: status preserves malformed Windows identities without confusing them with valid owners"
+}
+
 test_cygwin_ps_without_o_still_resolves_a_local_harness() {
   local dir fakebin got
   dir="$TMP_ROOT/cygwin-local"
@@ -778,6 +816,7 @@ test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
 test_native_admission_preserves_a_partially_numeric_windows_identity
 test_ordinary_acquisition_preserves_malformed_windows_identities
+test_status_distinguishes_malformed_windows_identities
 test_cygwin_ps_without_o_still_resolves_a_local_harness
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
