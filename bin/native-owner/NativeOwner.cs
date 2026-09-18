@@ -1,5 +1,6 @@
-// Experimental native ownership core; no installed launcher is provided.
-// The fixture driver registers scopes; association alone never grants ownership.
+// Experimental ownership core for the explicit opt-in launcher; no runtime
+// backend is installed. The controller registers scopes; association alone
+// never grants ownership.
 using System;
 using System.Collections;
 using System.Collections.Generic;

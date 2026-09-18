@@ -60,7 +60,8 @@ FM_NATIVE_TEST_JQ_IMAGE=<existing-local-image> FM_LIVE_NATIVE_LAUNCHER=1 FM_LIVE
 ## Safety boundary and limits
 
 Only empty-fleet homes beneath the current user's Windows temporary directory are accepted.
-Existing fleet metadata, projects, registrations, Relay configuration, process-event sources, non-temporary homes, and existing reparse-point ancestors are refused.
+Existing fleet metadata, registrations, Relay configuration, process-event sources, non-temporary homes, and existing reparse-point ancestors are refused.
+The `projects` path may be absent or an ordinary empty directory; populated, non-directory, and reparse-point forms are refused unchanged.
 The app-server thread is ephemeral, read-only, network-disabled, and approval-never; Apps, plugins, and configured MCP servers are disabled for this host and their effective catalogs are checked before readiness.
 Only controller-selected startup, notification check, and acknowledgement scripts receive registered native operation authority.
 The two notification tools are the model-facing path to those registered host operations, not the complete Codex tool catalog; ordinary tools cannot acquire native authority from the inherited endpoint, claims, callback identity, or session job.
