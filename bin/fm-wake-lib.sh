@@ -2239,6 +2239,7 @@ fm_wake_native_empty_fleet_preflight() {  # <state-dir> [<native-ack-evidence>]
     else
       status=$?
       if [ "$status" -ne 1 ]; then
+        # shellcheck disable=SC2034 # Public result consumed by bin/native-owner/admit.sh.
         FM_WAKE_NATIVE_ADMISSION_ERROR="wake completion history is unrecognized at $history"
         return 1
       fi
@@ -2358,6 +2359,7 @@ fm_wake_ack_evidence_clear() {
 }
 
 fm_wake_ack_evidence_legacy_token() {
+  # shellcheck disable=SC2016  # Single quotes are deliberate: ${...} belongs to the Node snippet.
   node -e '
     let input="";
     process.stdin.setEncoding("utf8");
@@ -2460,12 +2462,12 @@ fm_wake_ack_evidence_capture() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     note="$STATE/inbox/$id.note"
-    [ ! -e "$STATE/inbox/handled/$id.note" ] && [ ! -L "$STATE/inbox/handled/$id.note" ] \
-      && fm_wake_ack_note_safe "$note" && digest=$(fm_wake_ack_hash "$note") || {
-        fm_lock_release "$FM_WAKE_QUEUE_LOCK"
-        fm_wake_ack_evidence_clear
-        return 1
-      }
+    if [ -e "$STATE/inbox/handled/$id.note" ] || [ -L "$STATE/inbox/handled/$id.note" ] \
+      || ! fm_wake_ack_note_safe "$note" || ! digest=$(fm_wake_ack_hash "$note"); then
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+      fm_wake_ack_evidence_clear
+      return 1
+    fi
     printf '%s\t%s\n' "$id" "$digest" >> "$FM_WAKE_ACK_EVIDENCE_NOTES.hashes" || {
       fm_lock_release "$FM_WAKE_QUEUE_LOCK"
       fm_wake_ack_evidence_clear
@@ -2584,7 +2586,6 @@ fm_wake_ack_evidence_load() {  # <opaque-token>
     return 1
   fi
   rm -f -- "$notes_derived" "$expected_notes"
-  FM_WAKE_ACK_EVIDENCE_TOKEN=$token
 }
 
 fm_wake_ack_evidence_native_recovery() {  # <opaque-token> <marker>

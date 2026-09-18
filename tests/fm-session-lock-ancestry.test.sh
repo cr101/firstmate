@@ -849,9 +849,9 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
 }
 
 test_native_state_contract() (
-  # shellcheck source=bin/fm-session-lock-lib.sh
+  # shellcheck source=/dev/null
   . "$LIB"
-  local answer rc identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  local answer rc identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa FM_HOME FM_STATE_OVERRIDE
   fm_native_owner_call() { return "$answer"; }
   fm_session_pid_valid "$identity" || fail "valid native identity rejected"
   if fm_session_pid_valid native:123; then fail "malformed native identity accepted"; fi
@@ -902,7 +902,7 @@ printf '%s\n' "$@" > "$FM_TEST_NATIVE_ARGS"
 exit "$FM_TEST_NATIVE_EXIT"
 SH
   chmod +x "$fakebin/uname" "$fakebin/cygpath" "$dir/fm-native-owner.exe"
-  # shellcheck source=bin/fm-session-lock-lib.sh
+  # shellcheck source=/dev/null
   . "$LIB"
   FM_NATIVE_OWNER_BIN="$dir/fm-native-owner.exe"
   FM_HOME="$dir/ambient"

@@ -344,7 +344,7 @@ native_admission_predicate() {
     [ "$key" = startup-network ] || continue
     [ "$kind" = check ] || return 1
     recognized=false
-    for state in done failed timeout; do
+    for state in 'done' failed timeout; do
       expected=$(fm_wake_startup_network_payload "$state") || return 1
       [ "$payload" != "$expected" ] || recognized=true
     done
