@@ -73,7 +73,7 @@ function enqueue(home,message){
 function pausedEnqueue(home,message,control){
  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('FM_')&&!key.startsWith('PI_')));
  Object.assign(env,{MSYS:'winsymlinks:nativestrict'});
- const child=spawn('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc',posix(path.join(repo,'tests/fixtures/native-owner/pause-inbox-publication.sh')),posix(code),posix(home),posix(control),message],{env,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';
+ const child=spawn('C:/Program Files/Git/bin/bash.exe',['--noprofile','--norc','-c','home=$(cygpath -u "$3") || exit; exec /usr/bin/bash "$1" "$2" "$home" "$4" "$5"','paused-inbox',posix(path.join(repo,'tests/fixtures/native-owner/pause-inbox-publication.sh')),posix(code),home,posix(control),message],{env,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';
  child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);
  return new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',exit=>resolve({exit,stdout,stderr}));});
 }
