@@ -167,7 +167,7 @@ async function hostScenario(scenario,cycles=1){
  let result,failure;
  try {
   result=await runCodexHost({
-   env:{...process.env,FM_PROBE_HOME:runtime,FM_PROBE_CODE_ROOT:repo,FM_HOME:home,FM_PROBE_SESSION:'session',FM_PROBE_NONCE:'nonce'},
+   env:{...process.env,APPDATA:path.join(area,'appdata'),FM_PROBE_HOME:runtime,FM_PROBE_CODE_ROOT:repo,FM_HOME:home,FM_PROBE_SESSION:'session',FM_PROBE_NONCE:'nonce'},
    input,output,error,native,mcpServerNames:[],spawnAppServer:()=>createFakeAppServer(scenario),installSignalHandlers:false,
    afterAutomaticTurn:({evidence})=>{
     if(scenario==='success-then-next-check')return false;
