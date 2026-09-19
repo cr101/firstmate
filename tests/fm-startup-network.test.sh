@@ -342,8 +342,11 @@ EOF
   assert_grep 'check	startup-network' "$home/state/.wake-queue" \
     "an actionable result did not reach the wake queue"
   (
+    export FM_ROOT_OVERRIDE="$root"
+    export FM_HOME="$home"
+    export FM_STATE_OVERRIDE="$home/state"
     # shellcheck source=/dev/null
-    FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" . "$root/bin/fm-wake-lib.sh"
+    . "$root/bin/fm-wake-lib.sh"
     fm_wake_native_empty_fleet_preflight "$home/state"
   ) || fail "the native admission owner refused an actual startup completion wake"
 
@@ -351,8 +354,11 @@ EOF
   sed 's/^state=done$/state=failed/' "$home/state/.startup-network.status" > "$status_tmp"
   mv "$status_tmp" "$home/state/.startup-network.status"
   (
+    export FM_ROOT_OVERRIDE="$root"
+    export FM_HOME="$home"
+    export FM_STATE_OVERRIDE="$home/state"
     # shellcheck source=/dev/null
-    FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" . "$root/bin/fm-wake-lib.sh"
+    . "$root/bin/fm-wake-lib.sh"
     fm_wake_native_empty_fleet_preflight "$home/state"
   ) || fail "native admission tied a queued startup completion to mutable latest-run status"
 
