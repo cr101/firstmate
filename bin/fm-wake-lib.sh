@@ -2499,6 +2499,7 @@ fm_wake_ack_evidence_capture() {
   } > "$payload" || { rm -f -- "$payload"; fm_wake_ack_evidence_clear; return 1; }
   encoded=$(base64 < "$payload" | tr -d '\r\n') || { rm -f -- "$payload"; fm_wake_ack_evidence_clear; return 1; }
   rm -f -- "$payload"
+  # shellcheck disable=SC2034 # Public capture output consumed by native-owner/ack-evidence.sh.
   FM_WAKE_ACK_EVIDENCE_TOKEN="v1.$encoded"
 }
 

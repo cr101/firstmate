@@ -852,6 +852,7 @@ test_native_state_contract() (
   # shellcheck source=/dev/null
   . "$LIB"
   local answer rc identity=native:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa FM_HOME FM_STATE_OVERRIDE
+  # shellcheck disable=SC2329 # Mock invoked indirectly by fm_native_owner_state.
   fm_native_owner_call() { return "$answer"; }
   fm_session_pid_valid "$identity" || fail "valid native identity rejected"
   if fm_session_pid_valid native:123; then fail "malformed native identity accepted"; fi
@@ -904,6 +905,7 @@ SH
   chmod +x "$fakebin/uname" "$fakebin/cygpath" "$dir/fm-native-owner.exe"
   # shellcheck source=/dev/null
   . "$LIB"
+  # shellcheck disable=SC2034 # Test input consumed by fm_native_owner_call.
   FM_NATIVE_OWNER_BIN="$dir/fm-native-owner.exe"
   FM_HOME="$dir/ambient"
   FM_STATE_OVERRIDE="$ambient"
