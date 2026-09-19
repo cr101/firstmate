@@ -1649,8 +1649,8 @@ fm_autoarm_claim_open() {  # <state-dir> [grace]
 # The watcher runs only between turns; turn-end re-arms.
 #
 # Healthy means outcome=rewake with no exhausted-failure marker, bound to the
-# current session-lock pid and current watcher recovery generation. The rewake
-# ledger must also be at least as new as the last watcher beacon: a later beacon
+# current session-lock owner identity and current watcher recovery generation.
+# The rewake ledger must also be at least as new as the last watcher beacon: a later beacon
 # proves another between-turns watcher cycle has begun, so the rewake belongs to
 # an earlier handling turn.
 #

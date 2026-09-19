@@ -470,14 +470,15 @@ fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
   [ "$recorded" = "$trusted" ]
 }
 
-# Print the pid bin/fm-lock.sh records on lock line 1 for this session. For a
-# Claude session with a trusted id that is CLAUDE_PID, the model-loop process:
-# never the shared transient daemon and never a front-end that outlives the
-# session, so "recorded pid dead" keeps meaning "session gone" instead of
-# wedging a home behind a live daemon whose session died. A replaced background
-# helper leaves a dead pid that its own session's next hook reclaims, because
-# the sidecar still names that session. Every other session records the
-# outermost pid of its contiguous run, exactly as before.
+# Print the owner identity bin/fm-lock.sh records on lock line 1 for this
+# session. The native route retains its opaque generation. For a Claude session
+# with a trusted id the identity is CLAUDE_PID, the model-loop process: never the
+# shared transient daemon and never a front-end that outlives the session, so a
+# dead recorded process still means the session is gone instead of wedging a
+# home behind a live daemon whose session died. A replaced background helper
+# leaves a dead pid that its own session's next hook reclaims, because the
+# sidecar still names that session. Every other process-backed session records
+# the outermost pid of its verified identity set.
 fm_session_lock_anchor_pid() {
   local pids
   pids=$(fm_harness_ancestry_pids) || return 1

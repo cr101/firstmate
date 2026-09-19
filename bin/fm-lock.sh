@@ -3,24 +3,25 @@
 # Writes a numeric local pid, a tagged Windows pid, or an opaque launch-bound
 # native owner identity.
 #
-# Line 1 of state/.lock is the owning session's anchor pid, resolved by
-# fm_session_lock_anchor_pid in bin/fm-session-lock-lib.sh: the harness (agent)
-# process found by walking the shell's ancestry, which lives as long as the
-# firstmate session - unlike the transient subshell PID of any one tool call,
-# which is dead moments after it is written. For a Claude session that proves a
-# trusted session id the anchor is CLAUDE_PID, the model-loop process, so a
-# shared transient daemon or a front-end that outlives the session never keeps
-# a dead session's lock alive. Line 1 keeps its whole-line pid format because
-# every other reader takes the first line as the pid.
+# Line 1 of state/.lock is the owning session's identity, resolved by
+# fm_session_lock_anchor_pid in bin/fm-session-lock-lib.sh. Process-backed
+# sessions record a verified harness identity that lives as long as the
+# firstmate session, unlike the transient subshell PID of any one tool call;
+# the experimental native launcher records its opaque generation instead. For
+# a Claude session that proves a trusted session id the anchor is CLAUDE_PID,
+# the model-loop process, so a shared transient daemon or a front-end that
+# outlives the session never keeps a dead session's lock alive. Every reader
+# consumes the complete first line as one owner identity.
 #
 # The trusted id itself is recorded beside the lock in state/.lock-session, a
 # sidecar written only here and only under the claim lock: refreshed on every
 # confirmed-own acquisition, including the early already-mine exit that waits
 # for the claim lock, removed when the acquiring session proves no trusted id,
 # and left byte-identical when it already names that id. A same-session
-# confirmation never rewrites line 1 while the recorded pid is alive, because
-# bin/fm-startup-network.sh compares that pid across its deferred sweeps; a dead
-# recorded pid is reclaimed and rewritten to this session's anchor.
+# confirmation never rewrites line 1 while the recorded owner is positively
+# live, because bin/fm-startup-network.sh compares that identity across its
+# deferred sweeps; a proven-dead recorded owner is reclaimed and rewritten to
+# this session's anchor.
 #
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
@@ -36,8 +37,8 @@ LOCK="$STATE/.lock"
 LOCK_SESSION="$STATE/.lock-session"
 
 # Harness identity (FM_HARNESS_RE, ancestry walk, holder liveness, trusted
-# session id, anchor pid) is owned by the shared session-lock lib so the Claude
-# Stop auto-arm applies the exact same identity contract.
+# session id, owner identity) is owned by the shared session-lock lib so the
+# Claude Stop auto-arm applies the exact same identity contract.
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
@@ -271,8 +272,8 @@ publish_lock_session_or_die() {
   exit 1
 }
 
-# This session already holds the lock, recorded as pid $1. Line 1 stays exactly
-# as recorded while that pid is alive; only the sidecar is refreshed, under the
+# This session already holds the lock under identity $1. Line 1 stays exactly
+# as recorded while that owner is live; only the sidecar is refreshed, under the
 # claim lock, so a /clear re-key inside the same process replaces the old id.
 # A same-session confirmation waits for the claim lock so the sidecar refresh
 # completes. After the wait, the lock is re-read and the sidecar is refreshed
@@ -280,7 +281,7 @@ publish_lock_session_or_die() {
 # and the caller continues with the ordinary live-owner or reclaim path. The
 # prior-session-sweep-is-finishing refusal is a takeover rule and does not
 # apply here.
-confirm_own_lock() {  # <recorded-pid>
+confirm_own_lock() {  # <recorded-owner>
   local recorded waited=0
   if [ "$CLAIM_LOCK_HELD" -ne 1 ]; then
     fm_lock_acquire_wait "$CLAIM_LOCK"
@@ -341,7 +342,7 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
     fi
   fi
 fi
-# The sidecar goes first: a fresh pid beside a previous session's id would let
+# The sidecar goes first: a fresh owner beside a previous session's id would let
 # that session's resume own this lock. If the sidecar changes before line 1 is
 # written, a failure restores the previous sidecar. If line 1 is written but
 # not yet verified, a failure removes the sidecar and leaves the lock

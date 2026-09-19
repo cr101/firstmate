@@ -11,14 +11,15 @@
 #     secondmate home) with AGENTS.md, bin/, and the effective state dir - the
 #     exact fm-turnend-guard.sh scope. Child crew/scout worktrees stay inert.
 #   - Identity: only when THIS session holds state/.lock, as
-#     bin/fm-session-lock-lib.sh decides it: the recorded pid is a harness
-#     ancestor, or a live lock was recorded under this same trusted Claude
-#     session id (which is what keeps a background session arming after its
-#     transient helper chain is recycled).
-#     When an existing numeric owner fails the shared harness-liveness predicate,
-#     the hook delegates guarded recovery to bin/fm-lock.sh and then re-verifies
-#     ownership. A live owner, missing lock, malformed lock, or unresolved
-#     ancestry remains inert, so a competing session never arms or rewakes.
+#     bin/fm-session-lock-lib.sh decides it: the recorded owner belongs to this
+#     session's verified identity set, or a live lock was recorded under this
+#     same trusted Claude session id (which is what keeps a background session
+#     arming after its transient helper chain is recycled).
+#     When an existing recognized owner is proven dead by the shared liveness
+#     predicate, the hook delegates guarded recovery to bin/fm-lock.sh and then
+#     re-verifies ownership. A live or unknown owner, missing lock, malformed
+#     lock, or unresolved identity remains inert, so a competing session never
+#     arms or rewakes.
 #   - AFK: while state/.afk exists the away daemon owns the watcher and triage;
 #     this hook exits 0 and NEVER rewakes the primary (checked again at
 #     translation time so a mid-cycle AFK transition is honored).
@@ -59,8 +60,8 @@
 #     until the synchronous guard has consumed its attended fail-open.
 #
 # The epoch ledger state/.claude-autoarm-epoch records the latest claim
-# generation and outcome, and binds rewake outcomes to the session-lock pid and
-# watcher recovery generation, so the synchronous Stop guard
+# generation and outcome, and binds rewake outcomes to the session-lock owner
+# identity and watcher recovery generation, so the synchronous Stop guard
 # (bin/fm-turnend-guard.sh --claude) can allow a stop whose recovery this hook
 # already owns, instead of forcing a duplicate continuation for the same event
 # epoch. The failure marker

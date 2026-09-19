@@ -78,7 +78,8 @@
 #          unrecognized state and 2 for invalid usage.
 #
 # STATE, all under this home's state/ and gitignored with it:
-#   .startup-network.status   key=value record - generation, lock_pid, state,
+#   .startup-network.status   key=value record - generation, lock_pid (the
+#                             session-lock owner identity), state,
 #                             pid, started, finished, rc, locked, phases, and
 #                             whether the report was published. The single
 #                             source of truth for what ran and how it ended.
@@ -207,7 +208,7 @@ phase_label() {  # <phases>
 
 # --- start -------------------------------------------------------------------
 
-worker_covers_request() {  # <locked> <lock-pid>
+worker_covers_request() {  # <locked> <lock-owner>
   local locked=$1 lock_pid=$2
   [ "$locked" != 1 ] && return 0
   [ "$(status_get lock_pid)" = "$lock_pid" ] \
@@ -305,13 +306,13 @@ EOF
 # The question is deliberately "does the lock still name the session that asked
 # for this work?", not "is that session still alive". The hazard being closed is
 # a SECOND session sweeping concurrently. A different session can take the lock
-# only after the recorded holder is dead, when bin/fm-lock.sh rewrites that pid
-# with its own anchor. An unchanged value therefore proves no one else owns the sweeps, which is
+# only after the recorded holder is proven dead, when bin/fm-lock.sh rewrites
+# that identity with its own anchor. An unchanged value therefore proves no one else owns the sweeps, which is
 # the whole guarantee. Requiring liveness instead would refuse to finish work
 # nobody else has claimed, and the sweeps are idempotent, so finishing it is
 # strictly better than abandoning it. A missing, unreadable, or replaced lock all
 # fail closed to the read-only probe.
-lock_unchanged() {  # <expected-pid>
+lock_unchanged() {  # <expected-owner>
   local expected=$1 current
   fm_session_pid_valid "$expected" || return 1
   [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ] || return 1
@@ -440,7 +441,7 @@ EOF
   await_delivery "$generation" "$state"
 }
 
-cmd_run() {  # <locked> <lock-pid> <generation>
+cmd_run() {  # <locked> <lock-owner> <generation>
   local locked=$1 lock_pid=$2 generation=$3 phases started budget out rc sweep_locked=0 downgraded=0 internal=0 lease_held=0 timings stage_started
   mkdir -p "$STATE" 2>/dev/null || return 1
   started=$(now)

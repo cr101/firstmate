@@ -6,6 +6,10 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Windows session-lock ownership
+
+The tagged Windows process bridge has portable deterministic coverage in `tests/fm-session-lock-ancestry.test.sh`, but Windows Claude ownership has not been verified.
+
 ## Harness detection precedence
 
 `bin/fm-harness.sh` owns native-owner, marker, and ancestry precedence; the evidence below covers marker and ancestry only, not the experimental native candidate.
