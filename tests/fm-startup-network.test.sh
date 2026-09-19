@@ -342,9 +342,8 @@ EOF
   assert_grep 'check	startup-network' "$home/state/.wake-queue" \
     "an actionable result did not reach the wake queue"
   (
-    export FM_ROOT_OVERRIDE="$root"
-    export FM_HOME="$home"
-    export FM_STATE_OVERRIDE="$home/state"
+    local FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state"
+    export FM_ROOT_OVERRIDE FM_HOME FM_STATE_OVERRIDE
     # shellcheck source=/dev/null
     . "$root/bin/fm-wake-lib.sh"
     fm_wake_native_empty_fleet_preflight "$home/state"
@@ -354,9 +353,8 @@ EOF
   sed 's/^state=done$/state=failed/' "$home/state/.startup-network.status" > "$status_tmp"
   mv "$status_tmp" "$home/state/.startup-network.status"
   (
-    export FM_ROOT_OVERRIDE="$root"
-    export FM_HOME="$home"
-    export FM_STATE_OVERRIDE="$home/state"
+    local FM_ROOT_OVERRIDE="$root" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state"
+    export FM_ROOT_OVERRIDE FM_HOME FM_STATE_OVERRIDE
     # shellcheck source=/dev/null
     . "$root/bin/fm-wake-lib.sh"
     fm_wake_native_empty_fleet_preflight "$home/state"
