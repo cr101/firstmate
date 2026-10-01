@@ -161,11 +161,19 @@ fm_win_boundary_applies() {
 }
 
 # Strip the namespace tag from $1, or return 1 when $1 is not a tagged pid.
+# The tag is only meaningful where the boundary applies; anywhere else it is
+# rejected exactly like any other non-numeric lock value.
 fm_win_untag_pid() {  # <pid>
+  local winpid
   case "$1" in
-    "$FM_WIN_PID_PREFIX"[0-9]*) printf '%s' "${1#"$FM_WIN_PID_PREFIX"}"; return 0 ;;
+    "$FM_WIN_PID_PREFIX"*) winpid=${1#"$FM_WIN_PID_PREFIX"} ;;
+    *) return 1 ;;
   esac
-  return 1
+  case "$winpid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  fm_win_boundary_applies || return 1
+  printf '%s' "$winpid"
 }
 
 # True when $1 is a well-formed session-lock identity: a local pid, or a tagged
@@ -175,8 +183,8 @@ fm_win_untag_pid() {  # <pid>
 # holder - which reads as "startup never completed" and repeats the whole
 # sequence on every clear or compact.
 fm_session_pid_valid() {  # <value>
+  fm_win_untag_pid "$1" >/dev/null && return 0
   case "$1" in
-    "$FM_WIN_PID_PREFIX"[0-9]*) return 0 ;;
     ''|*[!0-9]*) return 1 ;;
   esac
   return 0
@@ -463,9 +471,7 @@ fm_session_lock_foreign_owner_live() {
   FM_SESSION_LOCK_FOREIGN_OWNER_PID=
   [ -f "$state/.lock" ] && [ ! -L "$state/.lock" ] || return 1
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
-  case "$lock_pid" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
+  fm_session_pid_valid "$lock_pid" || return 1
   fm_harness_pid_alive "$lock_pid" || return 1
   pids=$(fm_harness_ancestry_pids) || return 1
   while IFS= read -r pid; do
@@ -522,12 +528,14 @@ fm_session_lock_inspect() {  # <state>
   pid=${pid%%$'\n'*}
   # shellcheck disable=SC2034 # Output global, read by lock status and inbox ready.
   FM_LOCK_INSPECT_PID=$pid
-  case "$pid" in
-    ''|*[!0-9]*)
-      FM_LOCK_INSPECT_STATE=unknown
-      return 0
-      ;;
-  esac
+  fm_session_pid_valid "$pid" || return 0
+  if fm_win_untag_pid "$pid" >/dev/null; then
+    if fm_harness_pid_alive "$pid"; then
+      FM_LOCK_INSPECT_STATE=held
+      FM_LOCK_INSPECT_LIVE_HARNESS=true
+    fi
+    return 0
+  fi
   if kill -0 "$pid" 2>/dev/null; then
     if fm_harness_pid_alive "$pid"; then
       FM_LOCK_INSPECT_STATE=held

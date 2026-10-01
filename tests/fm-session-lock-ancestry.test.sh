@@ -571,12 +571,82 @@ test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock() {
 
   # Still fail closed on the shapes a torn or hand-edited lock produces, and on
   # a bare tag carrying no pid at all.
-  for bad in '' 'win:' 'win:abc' 'abc' '70 0' '-1'; do
+  for bad in '' 'win:' 'win:abc' 'win:7abc' 'win:7 x' 'win:-1' 'abc' '70 0' '-1'; do
     if lib_eval "$fakebin" "fm_session_pid_valid '$bad'"; then
       fail "the malformed lock value '$bad' was accepted as a usable identity"
     fi
   done
   pass "session-lock: a published identity is accepted by every gate that reads the lock"
+}
+
+test_windows_tagged_holder_is_a_live_foreign_owner() {
+  local dir fakebin table got
+  dir="$TMP_ROOT/win-foreign-owner"
+  fakebin=$(cygwin_fakebin "$dir")
+  mkdir -p "$dir/state"
+  printf 'win:7204\n' > "$dir/state/.lock"
+  # A second live session, 7300, reads the home held by the live session 7204.
+  table="$WIN_TABLE
+  4201600       0       0       7300  ?              0 22:30:00 C:\Users\u\.local\bin\claude.exe"
+
+  got=$(FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state") \
+    || fail "a live tagged lock holder was not seen as a foreign owner by a second session"
+  [ "$got" = 'win:7204' ] || fail "expected foreign owner win:7204, got '$got'"
+  if FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
+    fail "the tagged lock holder read its own lock as foreign"
+  fi
+
+  got=$(FM_TEST_WIN_TABLE="$table" lib_eval "$fakebin" \
+    "fm_session_lock_inspect '$dir/state'; printf '%s %s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_PID\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
+  [ "$got" = 'held win:7204 true' ] || fail "a live tagged holder was not inspected as held: '$got'"
+
+  # A tagged holder that is gone, or is not a harness, stays unclassified.
+  for gone in 9999 4321; do
+    printf 'win:%s\n' "$gone" > "$dir/state/.lock"
+    if FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
+      fail "an unverifiable tagged holder win:$gone was reported as a live foreign owner"
+    fi
+    got=$(FM_TEST_WIN_TABLE="$table" lib_eval "$fakebin" \
+      "fm_session_lock_inspect '$dir/state'; printf '%s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
+    [ "$got" = 'unknown unknown' ] || fail "an unverifiable tagged holder win:$gone was classified as '$got'"
+  done
+  pass "session-lock: a live tagged lock holder is a live foreign owner to a second Windows session"
+}
+
+test_tagged_lock_is_inert_off_windows() {
+  local dir fakebin state got value
+  dir="$TMP_ROOT/win-tag-off-windows"
+  fakebin=$(fm_fakebin "$dir")
+  cat > "$fakebin/uname" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' Linux
+SH
+  # Answers ps -W as if a live Windows harness held the lock, so only the
+  # platform gate can keep the tag from being honored.
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND'
+printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C:\Users\u\.local\bin\claude.exe'
+SH
+  chmod +x "$fakebin/uname" "$fakebin/ps"
+  state="$dir/state"
+  mkdir -p "$state"
+  printf 'win:7204\n' > "$state/.lock"
+
+  for value in 'win:7204' 'win:7abc'; do
+    if lib_eval "$fakebin" "fm_session_pid_valid '$value'"; then
+      fail "the Windows-tagged value '$value' was accepted off Windows"
+    fi
+  done
+  if FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'"; then
+    fail "a Windows-tagged lock was owned off Windows"
+  fi
+  if foreign_owner "$fakebin" "$state" >/dev/null; then
+    fail "a Windows-tagged lock was reported as a live foreign owner off Windows"
+  fi
+  got=$(lib_eval "$fakebin" "fm_session_lock_inspect '$state'; printf '%s' \"\$FM_LOCK_INSPECT_STATE\"")
+  [ "$got" = unknown ] || fail "a Windows-tagged lock off Windows was classified as '$got', not unknown"
+  pass "session-lock: a Windows-tagged lock stays inert off Windows"
 }
 
 test_cygwin_ps_without_o_still_resolves_a_local_harness() {
@@ -1278,6 +1348,8 @@ test_windows_session_is_identified_from_its_published_pid
 test_windows_published_pid_is_confirmed_before_it_is_trusted
 test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
+test_windows_tagged_holder_is_a_live_foreign_owner
+test_tagged_lock_is_inert_off_windows
 test_cygwin_ps_without_o_still_resolves_a_local_harness
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
