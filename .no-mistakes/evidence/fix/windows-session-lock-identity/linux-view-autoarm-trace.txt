@@ -1,0 +1,26 @@
+== S9a trace: Linux-reporting reader, dead holder win:25492, session B's Stop auto-arm (bash -x, identity section)
++ case "$AUTOARM_ATTEMPTS" in
++++ uname
+++ case "$poll" in
++ fm_primary_scope_matches /tmp/fm-lab.0gZwAY/root-head /tmp/fm-lab.0gZwAY/state
++ RECOVER_SESSION_LOCK=0
++ fm_session_lock_owned_by_self /tmp/fm-lab.0gZwAY/state
++ fm_session_pid_valid win:25492
++ fm_win_untag_pid win:25492
++ case "$1" in
++ case "$winpid" in
++ fm_win_boundary_applies
++ case "$(uname -s 2> /dev/null)" in
+++ uname -s
++ case "$1" in
++ LOCK_PID=win:25492
++ fm_session_pid_valid win:25492
++ fm_win_untag_pid win:25492
++ case "$1" in
++ case "$winpid" in
++ fm_win_boundary_applies
++ case "$(uname -s 2> /dev/null)" in
+++ uname -s
++ case "$1" in
++ exit 0
+lock after = win:25492

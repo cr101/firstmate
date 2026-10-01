@@ -1,0 +1,15 @@
+== S6 Claude Stop guard in read-only session B while live session A (win:25492) owns the home; supervision needed (state/demo-task.meta)
+-- this PR (0063438):
+$ [head] CLAUDE_PID=12940 fm-turnend-guard.sh --claude  (lock=win:25492)
+{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid win:25492). Allowing this turn to end safely; the owning session must restore supervision."}
+[exit 0]
+
+-- control, base 549e07f:
+$ [base] CLAUDE_PID=12940 fm-turnend-guard.sh --claude  (lock=win:25492)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher holds this home lock (last beat: never).
+●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[exit 2]

@@ -1,0 +1,20 @@
+== S7 real Git Bash (uname -s=MINGW64_NT-10.0-26200), live owner win:25492
+  [win:25492]  pid_valid=valid    harness_alive=alive
+  [win:7abc]   pid_valid=rejected harness_alive=not-alive
+  [win:]       pid_valid=rejected harness_alive=not-alive
+  [win:7 x]    pid_valid=rejected harness_alive=not-alive
+  [win:-1]     pid_valid=rejected harness_alive=not-alive
+  [4242]       pid_valid=valid    harness_alive=not-alive
+  status: lock: held by live harness pid win:25492
+
+== S8 same home, same live owner, but platform reported as Linux (PATH-shim uname -> Linux)
+  [win:25492]  pid_valid=rejected harness_alive=not-alive
+  [win:7abc]   pid_valid=rejected harness_alive=not-alive
+  [win:]       pid_valid=rejected harness_alive=not-alive
+  [win:7 x]    pid_valid=rejected harness_alive=not-alive
+  [win:-1]     pid_valid=rejected harness_alive=not-alive
+  [4242]       pid_valid=valid    harness_alive=not-alive
+  status: lock: stale (pid win:25492 dead or not a harness)
+  inbox ready lock: "lock":{"state":"unknown","pid":null,"live_harness":null}
+  stop guard (session B, Linux view): ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ●  TURN WOULD END BLIND - SUPERVISION IS OFF 
+  base 549e07f status under same Linux view: lock: stale (pid win:25492 dead or not a harness)

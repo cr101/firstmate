@@ -1,0 +1,58 @@
+== live Windows/Git Bash: MINGW64_NT-10.0-26200; head 0063438; lab /tmp/fm-lab.0gZwAY; MSYS=winsymlinks:nativestrict
+== idle real claude.exe stand-ins (ps -W):
+    31990   31985   31983      25492  ?         197608 22:14:49 /c/Users/Cristian/.local/bin/claude
+    31991   31986   31983      12940  ?         197608 22:14:49 /c/Users/Cristian/.local/bin/claude
+
+== S1 session A acquires (CLAUDE_PID=25492)
+$ CLAUDE_PID=25492 timeout 90 bin/fm-lock.sh
+lock acquired: harness pid win:25492
+[exit 0]
+state/.lock = win:25492
+
+== S1b session A re-acquire is idempotent
+$ CLAUDE_PID=25492 timeout 90 bin/fm-lock.sh
+lock acquired: harness pid win:25492
+[exit 0]
+state/.lock = win:25492
+
+== S2 status reports live tagged holder
+$ timeout 60 bin/fm-lock.sh status
+lock: held by live harness pid win:25492
+[exit 0]
+
+== S2b fm-inbox.sh ready lock field
+$ timeout 60 bin/fm-inbox.sh ready
+{"schema":"fm-primary-ready.v1","home":"Temp/fm-lab.0gZwAY","observed_at":"2026-10-01T09:19:14Z","lock":{"state":"held","pid":null,"live_harness":true},"wake_consumer":{"state":"unknown","reason":"supervision-model-unknown-for-home","beacon_age_seconds":null},"posture":{"state":"present"},"can_receive":"unknown"}
+[exit 0]
+
+== S3 session B (CLAUDE_PID=12940) is refused
+$ CLAUDE_PID=12940 timeout 90 bin/fm-lock.sh
+error: another live firstmate session holds the lock (pid win:25492); operate read-only until resolved
+[exit 1]
+state/.lock = win:25492
+
+== S4 owned-by-self / foreign-owner from each session
+$ CLAUDE_PID=25492 timeout 60 bash -c . bin/fm-session-lock-lib.sh; S=$FM_HOME/state; fm_session_lock_owned_by_self "$S" && echo owned_by_self=yes || echo owned_by_self=no; fm_session_lock_foreign_owner_live "$S" && echo "foreign_owner_live=yes ($FM_SESSION_LOCK_FOREIGN_OWNER_PID)" || echo foreign_owner_live=no
+owned_by_self=yes
+foreign_owner_live=no
+[exit 0]
+$ CLAUDE_PID=12940 timeout 60 bash -c . bin/fm-session-lock-lib.sh; S=$FM_HOME/state; fm_session_lock_owned_by_self "$S" && echo owned_by_self=yes || echo owned_by_self=no; fm_session_lock_foreign_owner_live "$S" && echo "foreign_owner_live=yes ($FM_SESSION_LOCK_FOREIGN_OWNER_PID)" || echo foreign_owner_live=no
+owned_by_self=no
+foreign_owner_live=yes (win:25492)
+[exit 0]
+
+== S5 adversarial: CLAUDE_PID names a live NON-harness Windows process
+non-harness winpid=7960: 25 C:\Windows\explorer.exe 
+$ CLAUDE_PID=7960 timeout 90 bin/fm-lock.sh
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh); operate read-only until resolved
+[exit 1]
+state/.lock unchanged = win:25492
+
+== S5b adversarial: no published pid, garbage pid
+$ timeout 90 bin/fm-lock.sh
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh); operate read-only until resolved
+[exit 1]
+$ CLAUDE_PID=12x timeout 90 bin/fm-lock.sh
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh); operate read-only until resolved
+[exit 1]
+state/.lock unchanged = win:25492

@@ -1,0 +1,17 @@
+== S9 session A's claude.exe (winpid 25492) terminated; Windows process table now:
+  (no row for 25492)
+  lock = win:25492
+
+== S9a adversarial (F1): dead win:25492 holder read on a Linux-reporting platform by session B's Stop auto-arm
+  [exit 0 in 1s] output: <none>
+  lock after = win:25492  (unchanged => inert, home not claimed)
+
+== S9b real Windows view: status of dead tagged holder
+  lock: stale (pid win:25492 dead or not a harness)
+  inbox: "lock":{"state":"unknown","pid":null,"live_harness":null}
+
+== S9c session B (CLAUDE_PID=12940) recovers the dead tagged lock
+$ CLAUDE_PID=12940 fm-lock.sh
+lock acquired: harness pid win:12940
+  [exit 0] lock = win:12940
+  status: lock: held by live harness pid win:12940
