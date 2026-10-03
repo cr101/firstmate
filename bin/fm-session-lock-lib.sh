@@ -204,11 +204,18 @@ fm_win_normalize_command() {  # <windows path>
 # Presence in `ps -W` is also this bridge's liveness test, because kill -0 cannot
 # answer that question across the namespace boundary.
 fm_win_command() {  # <winpid>
-  local winpid=$1 out
+  local winpid=$1 table out
   case "$winpid" in
-    ''|*[!0-9]*) return 1 ;;
+    ''|*[!0-9]*) return 2 ;;
   esac
-  out=$(ps -W 2>/dev/null | awk -v w="$winpid" '$4 == w { for (i = 8; i <= NF; i++) printf "%s%s", (i > 8 ? " " : ""), $i; exit }')
+  # Return 1 only when a readable table proves the pid absent, and 2 when the
+  # table itself could not be read, so a caller can tell gone from unknown.
+  table=$(ps -W 2>/dev/null) || return 2
+  case "$table" in
+    *WINPID*) ;;
+    *) return 2 ;;
+  esac
+  out=$(printf '%s\n' "$table" | awk -v w="$winpid" '$4 == w { for (i = 8; i <= NF; i++) printf "%s%s", (i > 8 ? " " : ""), $i; exit }')
   [ -n "$out" ] || return 1
   fm_win_normalize_command "$out"
 }
@@ -504,7 +511,7 @@ FM_LOCK_INSPECT_STATE=unknown
 FM_LOCK_INSPECT_PID=
 FM_LOCK_INSPECT_LIVE_HARNESS=unknown
 fm_session_lock_inspect() {  # <state>
-  local state=$1 lock pid
+  local state=$1 lock pid winpid win_rc
   # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
   FM_LOCK_INSPECT_STATE=unknown
   # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
@@ -529,11 +536,22 @@ fm_session_lock_inspect() {  # <state>
   # shellcheck disable=SC2034 # Output global, read by lock status and inbox ready.
   FM_LOCK_INSPECT_PID=$pid
   fm_session_pid_valid "$pid" || return 0
-  if fm_win_untag_pid "$pid" >/dev/null; then
+  if winpid=$(fm_win_untag_pid "$pid"); then
+    # The same verdicts as a local pid below, read from the Windows table.
     if fm_harness_pid_alive "$pid"; then
       FM_LOCK_INSPECT_STATE=held
       FM_LOCK_INSPECT_LIVE_HARNESS=true
+      return 0
     fi
+    win_rc=0
+    fm_win_command "$winpid" >/dev/null || win_rc=$?
+    case "$win_rc" in
+      0) FM_LOCK_INSPECT_LIVE_HARNESS=false ;;
+      1)
+        FM_LOCK_INSPECT_STATE=stale
+        FM_LOCK_INSPECT_LIVE_HARNESS=false
+        ;;
+    esac
     return 0
   fi
   if kill -0 "$pid" 2>/dev/null; then

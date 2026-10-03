@@ -461,6 +461,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 if [ "$mode" = W ]; then
+  [ -z "${FM_TEST_WIN_PS_FAIL:-}" ] || { echo "ps: cannot read the Windows process table" >&2; exit 1; }
   printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND'
   [ -n "${FM_TEST_WIN_TABLE:-}" ] && printf '%s\n' "$FM_TEST_WIN_TABLE"
   exit 0
@@ -600,16 +601,28 @@ test_windows_tagged_holder_is_a_live_foreign_owner() {
     "fm_session_lock_inspect '$dir/state'; printf '%s %s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_PID\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
   [ "$got" = 'held win:7204 true' ] || fail "a live tagged holder was not inspected as held: '$got'"
 
-  # A tagged holder that is gone, or is not a harness, stays unclassified.
+  # A holder that is not a harness, or whose table cannot be read, is never a
+  # live foreign owner. Inspection then matches the local-pid contract: a holder
+  # absent from a readable table is stale, a live non-harness is unknown with no
+  # live harness, and an unreadable table stays fully unknown.
   for gone in 9999 4321; do
     printf 'win:%s\n' "$gone" > "$dir/state/.lock"
     if FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
       fail "an unverifiable tagged holder win:$gone was reported as a live foreign owner"
     fi
-    got=$(FM_TEST_WIN_TABLE="$table" lib_eval "$fakebin" \
-      "fm_session_lock_inspect '$dir/state'; printf '%s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
-    [ "$got" = 'unknown unknown' ] || fail "an unverifiable tagged holder win:$gone was classified as '$got'"
   done
+  printf 'win:9999\n' > "$dir/state/.lock"
+  got=$(FM_TEST_WIN_TABLE="$table" lib_eval "$fakebin" \
+    "fm_session_lock_inspect '$dir/state'; printf '%s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
+  [ "$got" = 'stale false' ] || fail "a tagged holder absent from the Windows table was classified as '$got', not stale"
+  printf 'win:4321\n' > "$dir/state/.lock"
+  got=$(FM_TEST_WIN_TABLE="$table" lib_eval "$fakebin" \
+    "fm_session_lock_inspect '$dir/state'; printf '%s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
+  [ "$got" = 'unknown false' ] || fail "a live non-harness tagged holder was classified as '$got'"
+  printf 'win:9999\n' > "$dir/state/.lock"
+  got=$(FM_TEST_WIN_PS_FAIL=1 FM_TEST_WIN_TABLE="$table" lib_eval "$fakebin" \
+    "fm_session_lock_inspect '$dir/state'; printf '%s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
+  [ "$got" = 'unknown unknown' ] || fail "a tagged holder behind an unreadable Windows table was classified as '$got'"
   pass "session-lock: a live tagged lock holder is a live foreign owner to a second Windows session"
 }
 
@@ -647,6 +660,35 @@ SH
   got=$(lib_eval "$fakebin" "fm_session_lock_inspect '$state'; printf '%s' \"\$FM_LOCK_INSPECT_STATE\"")
   [ "$got" = unknown ] || fail "a Windows-tagged lock off Windows was classified as '$got', not unknown"
   pass "session-lock: a Windows-tagged lock stays inert off Windows"
+}
+
+test_windows_task_lease_follows_a_tagged_lock_holder() {
+  local dir fakebin home out status
+  local -x PI_CODING_AGENT=true
+  dir="$TMP_ROOT/win-lease"
+  fakebin=$(cygwin_fakebin "$dir")
+  home="$dir/home"
+  mkdir -p "$home/state"
+  printf 'win:7204\n' > "$home/state/.lock"
+
+  # The supervising actor's lease names the tagged session that holds the lock,
+  # so it stays live while that session does and the other actor is refused.
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_LEASE_HOLDER_PID PATH="$fakebin:$PATH" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch \
+    "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed under a tagged lock"
+  out=$(cut -f2 "$home/state/.lease-task-1")
+  [ "$out" = 'win:7204' ] || fail "the lease recorded holder '$out', not the tagged lock holder win:7204"
+  out=$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_LEASE_HOLDER_PID PATH="$fakebin:$PATH" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=main \
+    "$ROOT/bin/fm-lease.sh" claim task-1 2>&1)
+  status=$?
+  [ "$status" -eq 6 ] || fail "the other actor's claim over a live tagged lease exited $status, not 6: $out"
+
+  # Once the tagged holder is gone from the Windows table, the lease is stale.
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_LEASE_HOLDER_PID PATH="$fakebin:$PATH" \
+    FM_TEST_WIN_TABLE='' FM_HOME="$home" FM_SUPERVISION_ACTOR=main \
+    "$ROOT/bin/fm-lease.sh" claim task-1 || fail "a lease whose tagged holder exited still blocked the other actor"
+  pass "session-lock: a task lease follows a live tagged lock holder and goes stale when it exits"
 }
 
 test_cygwin_ps_without_o_still_resolves_a_local_harness() {
@@ -1350,6 +1392,7 @@ test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
 test_windows_tagged_holder_is_a_live_foreign_owner
 test_tagged_lock_is_inert_off_windows
+test_windows_task_lease_follows_a_tagged_lock_holder
 test_cygwin_ps_without_o_still_resolves_a_local_harness
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
