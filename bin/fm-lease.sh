@@ -125,15 +125,23 @@ case "$CMD" in
     # same-session re-anchor (bin/fm-lock.sh), since another session takes the
     # lock only from a holder that is no longer a live harness, so the claim
     # records the live line 1.
-    # This pid is checked with kill -0, so only a pid in THIS process table can
-    # serve. Take the lock's value whole and require it to be one: a lock holding
-    # an identity from another namespace must yield nothing and fall through to
-    # the shell below, never be reduced to its digits, because those digits name
-    # an unrelated local process rather than the holder.
+    # A local pid is checked with kill -0, so only a pid in THIS process table
+    # serves that way. Take each value whole and never reduce it to its digits,
+    # because those digits would name an unrelated local process. A
+    # Windows-tagged lock holder is kept whole instead while it names a live
+    # verified harness, and fm_lease_live checks it against the Windows process
+    # table; any other non-numeric value yields nothing and falls through to the
+    # shell below.
     HOLDER_PID=${FM_LEASE_HOLDER_PID:-}
-    case "$HOLDER_PID" in *[!0-9]*) HOLDER_PID= ;; esac
+    case "$HOLDER_PID" in
+      win:*) fm_lease_tagged_holder_live "$HOLDER_PID" || HOLDER_PID= ;;
+      *[!0-9]*) HOLDER_PID= ;;
+    esac
     LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
-    case "$LOCK_PID" in *[!0-9]*) LOCK_PID= ;; esac
+    case "$LOCK_PID" in
+      win:*) fm_lease_tagged_holder_live "$LOCK_PID" || LOCK_PID= ;;
+      *[!0-9]*) LOCK_PID= ;;
+    esac
     if [ -z "$HOLDER_PID" ]; then
       HOLDER_PID=$LOCK_PID
     elif [ "$HOLDER_PID" != "$LOCK_PID" ] && fm_pid_alive "$HOLDER_PID" && fm_pid_alive "$LOCK_PID"; then
