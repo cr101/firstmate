@@ -123,15 +123,12 @@ case "$CMD" in
     # shell; without a matching session lock the resulting lease is stale.
     # A local pid is checked with kill -0, so only a pid in THIS process table
     # serves that way. Take each value whole and never reduce it to its digits,
-    # because those digits would name an unrelated local process. A
-    # Windows-tagged lock holder is kept whole instead, and fm_lease_live checks
-    # it against the Windows process table; any other non-numeric value yields
-    # nothing and falls through to the shell below.
+    # because those digits would name an unrelated local process. Only the
+    # state/.lock holder may be Windows-tagged: it is kept whole, and
+    # fm_lease_live checks it against the Windows process table. Any other
+    # non-numeric value yields nothing and falls through to the next source.
     HOLDER_PID=${FM_LEASE_HOLDER_PID:-}
-    case "$HOLDER_PID" in
-      win:*) fm_lease_tagged_holder_live "$HOLDER_PID" || HOLDER_PID= ;;
-      *[!0-9]*) HOLDER_PID= ;;
-    esac
+    case "$HOLDER_PID" in *[!0-9]*) HOLDER_PID= ;; esac
     if [ -z "$HOLDER_PID" ]; then
       HOLDER_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
       case "$HOLDER_PID" in
