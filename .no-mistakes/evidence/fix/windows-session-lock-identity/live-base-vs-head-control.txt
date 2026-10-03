@@ -1,0 +1,16 @@
+== live foreign holder: stand-in claude.exe win:28020 (renamed ping.exe started by this test); self=win:3268
+-- BASE e31bc6e
+lock: stale (pid win:28020 dead or not a harness)
+error: cannot locate harness process in ancestry
+base acquire exit=1
+foreign_live=no
+-- HEAD 926681f
+lock: held by live harness pid win:28020
+error: another live firstmate session holds the lock (pid win:28020); operate read-only until resolved
+head acquire exit=1 (refused, lock kept: win:28020)
+foreign_live=yes pid=win:28020
+"lock":{"state":"held","pid":null,"live_harness":true}
+-- stand-in stopped (own process); HEAD now
+lock: stale (pid win:28020 dead or not a harness)
+lock acquired: harness pid win:3268
+reclaim exit=0 lock=win:3268

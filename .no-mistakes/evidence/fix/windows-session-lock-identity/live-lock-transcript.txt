@@ -1,0 +1,56 @@
+== platform: MINGW64_NT-10.0-26200; self=win:3268 foreign=win:6448 dead=win:999996
+== ps -o support check:
+ps: unknown option -- o
+
+== S1 acquire on free home (fm-lock.sh)
+lock acquired: harness pid win:3268
+exit=0
+state/.lock line1: win:3268
+== status
+lock: held by live harness pid win:3268
+== re-acquire by same session
+lock acquired: harness pid win:3268
+exit=0
+
+== S2 owned_by_self / foreign_owner_live (own lock)
+owned_by_self=yes
+foreign_live=no
+
+== S3 second live session holds the lock (win:6448)
+error: another live firstmate session holds the lock (pid win:6448); operate read-only until resolved
+acquire exit=1 (expect refusal)
+lock still: win:6448
+lock: held by live harness pid win:6448
+owned_by_self=no
+foreign_live=yes pid=win:6448
+== inbox ready lock fields
+{"schema":"fm-primary-ready.v1","home":"Temp/fm-lab.HP7JVP","observed_at":"2026-10-03T10:48:05Z","lock":{"state":"held","pid":null,"live_harness":true},"wake_consumer":{"state":"unknown","reason":"supervision-model-unknown-for-home","beacon_age_seconds":null},"posture":{"state":"present"},"can_receive":"unknown"}
+
+== S4 dead tagged holder (win:999996) -> stale, reclaimed
+lock: stale (pid win:999996 dead or not a harness)
+lock acquired: harness pid win:3268
+acquire exit=0
+lock now: win:3268
+
+== S5 malformed tagged values are rejected
+invalid [win:7abc]
+invalid [win:]
+invalid [win:7 x]
+valid   [win:6448]
+lock: stale (pid win:7abc dead or not a harness)
+lock: stale (pid win: dead or not a harness)
+
+== S6 harness publishing no pid stays read-only
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh); operate read-only until resolved
+exit=1
+ls: cannot access '/tmp/fm-lab.HP7JVP/state/.lock': No such file or directory
+== S6b CLAUDE_PID naming a non-harness live process (explorer/bash) stays read-only
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh); operate read-only until resolved
+exit=1 (CLAUDE_PID=7960 explorer)
+ls: cannot access '/tmp/fm-lab.HP7JVP/state/.lock': No such file or directory
+
+== S7 task lease records and honors tagged holder
+claim exit=0
+error: claim refused - task 'demo-task' is leased to the branch supervision actor (state/.lease-demo-task)
+main claim exit=6 (expect refusal while branch lease live)
+== lab removed: yes

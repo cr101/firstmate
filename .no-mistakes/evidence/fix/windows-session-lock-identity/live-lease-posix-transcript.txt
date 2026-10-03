@@ -1,0 +1,24 @@
+== S7 lease: lock=win:3268, branch claims with the host-style export (whole first line of state/.lock)
+claim exit=0
+lease file: branch win:3268 1791024897
+branch win:3268 1791024897 live
+check exit=0
+error: claim refused - task 'demo-task' is leased to the branch supervision actor (state/.lease-demo-task)
+main claim exit=6 (6 = refused, branch lease live)
+== S7b lease held by a dead tagged holder reads stale; main may take it
+branch win:3268 1791024897 stale
+check exit=0
+main claim exit=0
+
+== S8 POSIX unchanged: same live win:6448 lock read with uname reporting Linux
+-- uname now: Linux
+lock: stale (pid win:6448 dead or not a harness)
+pid_valid=no (rejected like main)
+foreign_live=no
+-- Stop auto-arm hook with a win:N lock on Linux (must stay inert, lock untouched)
+hook exit=0
+lock after hook: win:6448
+-- same hook on real Windows uname (foreign live holder): lock must also remain
+hook exit=0
+lock after hook: win:6448
+== lab removed: yes

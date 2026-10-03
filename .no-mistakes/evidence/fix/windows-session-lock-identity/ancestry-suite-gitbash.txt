@@ -11,6 +11,7 @@ ok - session-lock: a tagged Windows pid is never resolved against the Cygwin pro
 ok - session-lock: a published identity is accepted by every gate that reads the lock
 ok - session-lock: a live tagged lock holder is a live foreign owner to a second Windows session
 ok - session-lock: a Windows-tagged lock stays inert off Windows
+ok - session-lock: a task lease follows a live tagged lock holder and goes stale when it exits
 ok - session-lock: a harness in the local process table resolves untagged when ps has no -o option
 not ok - the fixture hook never finished
-/tmp/fm-session-lock-ancestry.QC0FMZ/e2e-version-named/session.sh: line 12: /tmp/fm-session-lock-ancestry.QC0FMZ/e2e-version-named/state/hook.rc: No such file or directory
+/tmp/fm-session-lock-ancestry.7AX21I/e2e-version-named/session.sh: line 12: /tmp/fm-session-lock-ancestry.7AX21I/e2e-version-named/state/hook.rc: No such file or directory
