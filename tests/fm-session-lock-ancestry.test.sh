@@ -688,6 +688,16 @@ test_windows_task_lease_follows_a_tagged_lock_holder() {
   env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_LEASE_HOLDER_PID PATH="$fakebin:$PATH" \
     FM_TEST_WIN_TABLE='' FM_HOME="$home" FM_SUPERVISION_ACTOR=main \
     "$ROOT/bin/fm-lease.sh" claim task-1 || fail "a lease whose tagged holder exited still blocked the other actor"
+
+  # A caller-supplied tagged holder (the supervision host passes the lock line
+  # whole) is recorded whole, never as its digits, and stays live.
+  rm -f "$home/state/.lease-task-1"
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH"     FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch     FM_LEASE_HOLDER_PID=win:7204     "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed with a tagged FM_LEASE_HOLDER_PID"
+  out=$(cut -f2 "$home/state/.lease-task-1")
+  [ "$out" = 'win:7204' ] || fail "a caller-supplied tagged holder was recorded as '$out', not win:7204"
+  out=$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_LEASE_HOLDER_PID PATH="$fakebin:$PATH"     FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=main     "$ROOT/bin/fm-lease.sh" claim task-1 2>&1)
+  status=$?
+  [ "$status" -eq 6 ] || fail "a lease from a caller-supplied tagged holder was not live: claim exited $status: $out"
   pass "session-lock: a task lease follows a live tagged lock holder and goes stale when it exits"
 }
 
