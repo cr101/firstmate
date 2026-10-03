@@ -663,7 +663,7 @@ SH
 }
 
 test_windows_task_lease_follows_a_tagged_lock_holder() {
-  local dir fakebin home out status
+  local dir fakebin home out status table
   local -x PI_CODING_AGENT=true
   dir="$TMP_ROOT/win-lease"
   fakebin=$(cygwin_fakebin "$dir")
@@ -689,15 +689,24 @@ test_windows_task_lease_follows_a_tagged_lock_holder() {
     FM_TEST_WIN_TABLE='' FM_HOME="$home" FM_SUPERVISION_ACTOR=main \
     "$ROOT/bin/fm-lease.sh" claim task-1 || fail "a lease whose tagged holder exited still blocked the other actor"
 
-  # A caller-supplied tagged holder (the supervision host passes the lock line
-  # whole) is recorded whole, never as its digits, and stays live.
+  # A caller-supplied tagged holder naming a live harness is taken whole ahead
+  # of the lock holder, never as its digits; a dead one falls back to the lock.
+  table="$WIN_TABLE
+  4201600       0       0       7300  ?              0 22:24:48 C:\Users\u\.local\bin\claude.exe"
   rm -f "$home/state/.lease-task-1"
-  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH"     FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch     FM_LEASE_HOLDER_PID=win:7204     "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed with a tagged FM_LEASE_HOLDER_PID"
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH" \
+    FM_TEST_WIN_TABLE="$table" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch \
+    FM_LEASE_HOLDER_PID=win:7300 \
+    "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed with a tagged FM_LEASE_HOLDER_PID"
   out=$(cut -f2 "$home/state/.lease-task-1")
-  [ "$out" = 'win:7204' ] || fail "a caller-supplied tagged holder was recorded as '$out', not win:7204"
-  out=$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_LEASE_HOLDER_PID PATH="$fakebin:$PATH"     FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=main     "$ROOT/bin/fm-lease.sh" claim task-1 2>&1)
-  status=$?
-  [ "$status" -eq 6 ] || fail "a lease from a caller-supplied tagged holder was not live: claim exited $status: $out"
+  [ "$out" = 'win:7300' ] || fail "a caller-supplied tagged holder was recorded as '$out', not win:7300"
+  rm -f "$home/state/.lease-task-1"
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH" \
+    FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch \
+    FM_LEASE_HOLDER_PID=win:7300 \
+    "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed with a dead tagged FM_LEASE_HOLDER_PID"
+  out=$(cut -f2 "$home/state/.lease-task-1")
+  [ "$out" = 'win:7204' ] || fail "a dead caller-supplied tagged holder was recorded as '$out', not the lock holder win:7204"
   pass "session-lock: a task lease follows a live tagged lock holder and goes stale when it exits"
 }
 
