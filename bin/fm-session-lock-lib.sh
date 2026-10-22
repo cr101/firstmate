@@ -236,6 +236,13 @@ fm_win_command() {  # <winpid>
 #     the wrong-process-binding failure this file exists to prevent.
 # A harness that publishes nothing is reported as unresolved instead, which
 # leaves the session read-only exactly as before - the safe direction.
+#
+# CLAUDE_PID is inherited by every process a Claude pane starts, so it is taken
+# only together with the CLAUDE_CODE_SESSION_ID Claude publishes beside it. That
+# id is then trusted and recorded beside the lock, and bin/fm-lock.sh refuses
+# the same pid under a different id. A non-Claude primary hand-started from a
+# Claude pane inherits both values and still resolves as that Claude session; no
+# environment signal tells the two apart there.
 FM_WIN_HARNESS_PID_VARS=(CLAUDE_PID)
 
 # Print this session's harness as one tagged Windows pid, or return 1.
@@ -253,6 +260,9 @@ fm_win_harness_ancestry_pids() {
     case "$winpid" in
       ''|*[!0-9]*) continue ;;
     esac
+    if [ "$var" = CLAUDE_PID ]; then
+      case "${CLAUDE_CODE_SESSION_ID:-}" in ''|*$'\n'*|*$'\r'*) continue ;; esac
+    fi
     comm=$(fm_win_command "$winpid") || continue
     fm_harness_process_matches "$comm" "$comm" || continue
     printf '%s%s\n' "$FM_WIN_PID_PREFIX" "$winpid"
@@ -397,10 +407,19 @@ fm_session_lock_trusted_session_id() {  # [<ancestry-pids>]
     pids=$(fm_harness_ancestry_pids) || return 1
   fi
   while IFS= read -r pid; do
-    [ "$pid" = "$claude_pid" ] || continue
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
-    args=$(ps -o args= -p "$pid" 2>/dev/null)
-    fm_harness_process_matches "$comm" "$args" || return 1
+    # On Windows the ancestry is the tagged pid the bridge already confirmed
+    # from CLAUDE_PID and this same id, so it is matched in that form.
+    case "$pid" in
+      "$claude_pid")
+        comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
+        args=$(ps -o args= -p "$pid" 2>/dev/null)
+        fm_harness_process_matches "$comm" "$args" || return 1
+        ;;
+      "$FM_WIN_PID_PREFIX$claude_pid")
+        fm_harness_pid_alive "$pid" || return 1
+        ;;
+      *) continue ;;
+    esac
     [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || return 1
     printf '%s\n' "$id"
     return 0
@@ -433,6 +452,18 @@ fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
   [ "$recorded" = "$trusted" ]
 }
 
+# True when the lock in state dir $1 records this process's own tagged Windows
+# pid $2 under a session id other than this process's. That pid comes from an
+# inheritable CLAUDE_PID, so the recorded id, not the pid, names its session.
+# The bridge resolves a tagged pid only together with this process's
+# CLAUDE_CODE_SESSION_ID, so that id is compared without another ancestry walk.
+fm_session_lock_tagged_other_session() {  # <state> <pid>
+  local recorded
+  case "$2" in "$FM_WIN_PID_PREFIX"*) ;; *) return 1 ;; esac
+  recorded=$(fm_session_lock_recorded_session_id "$1") || return 1
+  [ "$recorded" != "${CLAUDE_CODE_SESSION_ID:-}" ]
+}
+
 # Print the pid bin/fm-lock.sh records on lock line 1 for this session. For a
 # Claude session with a trusted id that is CLAUDE_PID, the model-loop process:
 # never the shared transient daemon and never a front-end that outlives the
@@ -440,11 +471,13 @@ fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
 # wedging a home behind a live daemon whose session died. A replaced background
 # helper leaves a dead pid that its own session's next hook reclaims, because
 # the sidecar still names that session. Every other session records the
-# outermost pid of its contiguous run, exactly as before.
+# outermost pid of its contiguous run, exactly as before; a trusted Windows
+# session's run is its tagged CLAUDE_PID alone, so it records that tagged pid.
 fm_session_lock_anchor_pid() {
   local pids
   pids=$(fm_harness_ancestry_pids) || return 1
-  if fm_session_lock_trusted_session_id "$pids" >/dev/null; then
+  if fm_session_lock_trusted_session_id "$pids" >/dev/null \
+    && fm_harness_pid_listed "$CLAUDE_PID" "$pids"; then
     printf '%s\n' "$CLAUDE_PID"
     return 0
   fi
@@ -462,13 +495,18 @@ fm_session_lock_anchor_pid() {
 # bin/fm-lock.sh's ordinary stale-owner path, which refreshes line 1, rather than
 # silently owned with a dead anchor. A missing lock, a malformed lock, a lock
 # held by a harness outside this ancestry under another (or no) session id, or
-# an ancestry that cannot be resolved all fail closed.
+# an ancestry that cannot be resolved all fail closed. A tagged Windows pid in
+# the ancestry is not ownership when the lock records it under another session
+# id (fm_session_lock_tagged_other_session).
 fm_session_lock_owned_by_self() {
   local state=$1 lock_pid pids
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
   pids=$(fm_harness_ancestry_pids) || return 1
-  fm_harness_pid_listed "$lock_pid" "$pids" && return 0
+  if fm_harness_pid_listed "$lock_pid" "$pids"; then
+    fm_session_lock_tagged_other_session "$state" "$lock_pid" && return 1
+    return 0
+  fi
   fm_session_lock_same_session "$state" "$pids" || return 1
   fm_harness_pid_alive "$lock_pid"
 }
@@ -488,7 +526,8 @@ fm_session_lock_foreign_owner_live() {
   fm_session_pid_valid "$lock_pid" || return 1
   fm_harness_pid_alive "$lock_pid" || return 1
   pids=$(fm_harness_ancestry_pids) || return 1
-  fm_harness_pid_listed "$lock_pid" "$pids" && return 1
+  fm_harness_pid_listed "$lock_pid" "$pids" \
+    && ! fm_session_lock_tagged_other_session "$state" "$lock_pid" && return 1
   fm_session_lock_same_session "$state" "$pids" && return 1
   # shellcheck disable=SC2034 # Output global, read by the sourcing guard caller.
   FM_SESSION_LOCK_FOREIGN_OWNER_PID=$lock_pid

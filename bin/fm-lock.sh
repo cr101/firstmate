@@ -8,8 +8,10 @@
 # which is dead moments after it is written. For a Claude session that proves a
 # trusted session id the anchor is CLAUDE_PID, the model-loop process, so a
 # shared transient daemon or a front-end that outlives the session never keeps
-# a dead session's lock alive. Line 1 keeps its whole-line pid format because
-# every other reader takes the first line as the pid.
+# a dead session's lock alive. On Windows that pid is recorded tagged, and since
+# CLAUDE_PID is inheritable, the same tagged pid under a different recorded
+# session id is refused as another live session's. Line 1 keeps its whole-line
+# pid format because every other reader takes the first line as the pid.
 #
 # The trusted id itself is recorded beside the lock in state/.lock-session, a
 # sidecar written only here and only under the claim lock: refreshed on every
@@ -196,6 +198,13 @@ publish_lock_session_or_die() {
   exit 1
 }
 
+# True when recorded pid $1 is this session's anchor. A tagged Windows anchor
+# comes from an inheritable CLAUDE_PID, so it is this session's only while the
+# lock does not record it under another session id.
+is_own_pid() {  # <recorded-pid>
+  [ "$1" = "$me" ] && ! fm_session_lock_tagged_other_session "$STATE" "$me"
+}
+
 # This session already holds the lock, recorded as pid $1. Line 1 stays exactly
 # as recorded while that pid is alive and in this session's ancestry; only the
 # sidecar is refreshed, under the claim lock, so a /clear re-key inside the same
@@ -216,7 +225,7 @@ confirm_own_lock() {  # <recorded-pid>
     waited=1
   fi
   recorded=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$recorded" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if is_own_pid "$recorded" || fm_session_lock_owned_by_self "$STATE"; then
     if [ "$recorded" != "$me" ] && pids=$(fm_harness_ancestry_pids) \
       && ! fm_harness_pid_listed "$recorded" "$pids" \
       && fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT"; then
@@ -248,7 +257,7 @@ refuse_live_owner() {  # <recorded-pid>
 
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$old" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if is_own_pid "$old" || fm_session_lock_owned_by_self "$STATE"; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
@@ -280,10 +289,10 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   }
   # A re-anchor decided above has held the claim lock since, so line 1 is the
   # pid it recorded and needs no second verdict.
-  if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+  if [ -z "$REANCHOR" ] && ! is_own_pid "$old" && fm_harness_pid_alive "$old"; then
     fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+    if [ -z "$REANCHOR" ] && ! is_own_pid "$old" && fm_harness_pid_alive "$old"; then
       refuse_live_owner "$old"
     fi
   fi

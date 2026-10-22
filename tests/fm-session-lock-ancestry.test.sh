@@ -497,12 +497,12 @@ test_windows_session_is_identified_from_its_published_pid() {
   mkdir -p "$dir/state"
   printf 'win:7204\n' > "$dir/state/.lock"
 
-  got=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_ancestry_pid') \
+  got=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_ancestry_pid') \
     || fail "the session was not identified at all on a severed Cygwin parent link"
   [ "$got" = 'win:7204' ] || fail "expected the tagged Windows session pid win:7204, got '$got'"
-  FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_pid_alive win:7204' \
+  FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_pid_alive win:7204' \
     || fail "a live Windows-side session was classified as a dead lock owner"
-  FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$dir/state'" \
+  FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$dir/state'" \
     || fail "the session holding the lock did not recognize itself as the owner"
   pass "session-lock: a Windows session is identified from its published pid across the severed parent link"
 }
@@ -517,7 +517,7 @@ test_windows_published_pid_is_confirmed_before_it_is_trusted() {
   # than bound: a process that is gone, one that is not a harness at all, and a
   # path that merely contains the harness name inside a longer component.
   for claimed in 9999 4321 5150; do
-    if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_CLAUDE_PID="$claimed" lib_eval "$fakebin" 'fm_harness_ancestry_pid'; then
+    if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID="$claimed" lib_eval "$fakebin" 'fm_harness_ancestry_pid'; then
       fail "published pid $claimed was bound as this session's harness without confirmation"
     fi
     if FM_TEST_WIN_TABLE="$WIN_TABLE" lib_eval "$fakebin" "fm_harness_pid_alive win:$claimed"; then
@@ -560,7 +560,7 @@ test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock() {
   # completion record that was never written, which reads as "startup never
   # finished" and repeats the whole sequence on every clear or compact. One
   # predicate owns the question so a third shape can never split them again.
-  identity=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_ancestry_pid') \
+  identity=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_ancestry_pid') \
     || fail "fixture is vacuous: no identity was published to gate on"
   lib_eval "$fakebin" "fm_session_pid_valid '$identity'" \
     || fail "the identity '$identity' this session publishes is rejected by the gates that read it back"
@@ -590,10 +590,10 @@ test_windows_tagged_holder_is_a_live_foreign_owner() {
   table="$WIN_TABLE
   4201600       0       0       7300  ?              0 22:30:00 C:\Users\u\.local\bin\claude.exe"
 
-  got=$(FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state") \
+  got=$(FM_TEST_WIN_TABLE="$table" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state") \
     || fail "a live tagged lock holder was not seen as a foreign owner by a second session"
   [ "$got" = 'win:7204' ] || fail "expected foreign owner win:7204, got '$got'"
-  if FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
+  if FM_TEST_WIN_TABLE="$table" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
     fail "the tagged lock holder read its own lock as foreign"
   fi
 
@@ -607,7 +607,7 @@ test_windows_tagged_holder_is_a_live_foreign_owner() {
   # live harness, and an unreadable table stays fully unknown.
   for gone in 9999 4321; do
     printf 'win:%s\n' "$gone" > "$dir/state/.lock"
-    if FM_TEST_WIN_TABLE="$table" FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
+    if FM_TEST_WIN_TABLE="$table" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7300 foreign_owner "$fakebin" "$dir/state" >/dev/null; then
       fail "an unverifiable tagged holder win:$gone was reported as a live foreign owner"
     fi
   done
@@ -624,6 +624,62 @@ test_windows_tagged_holder_is_a_live_foreign_owner() {
     "fm_session_lock_inspect '$dir/state'; printf '%s %s' \"\$FM_LOCK_INSPECT_STATE\" \"\$FM_LOCK_INSPECT_LIVE_HARNESS\"")
   [ "$got" = 'unknown unknown' ] || fail "a tagged holder behind an unreadable Windows table was classified as '$got'"
   pass "session-lock: a live tagged lock holder is a live foreign owner to a second Windows session"
+}
+
+test_windows_published_pid_needs_its_claude_session_id() {
+  local dir fakebin got
+  dir="$TMP_ROOT/win-session-id"
+  fakebin=$(cygwin_fakebin "$dir")
+  mkdir -p "$dir/state"
+
+  # CLAUDE_PID is inherited by every process a Claude pane starts, so on its
+  # own it names a live Claude without proving this process belongs to it.
+  if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_harness_ancestry_pid' >/dev/null; then
+    fail "a published Claude pid without its session id was bound as this session's harness"
+  fi
+  got=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_session_lock_trusted_session_id') \
+    || fail "the session id published with a confirmed Windows Claude pid was not trusted"
+  [ "$got" = S1 ] || fail "expected the trusted session id S1, got '$got'"
+  got=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" 'fm_session_lock_anchor_pid') \
+    || fail "no anchor pid was resolved for a Windows session with its id"
+  [ "$got" = 'win:7204' ] || fail "a trusted Windows session anchored '$got', expected the tagged pid win:7204"
+  pass "session-lock: a published Windows Claude pid is accepted only with its session id"
+}
+
+test_windows_lock_refuses_the_pid_under_another_session_id() {
+  local dir fakebin home out status
+  dir="$TMP_ROOT/win-other-session"
+  fakebin=$(cygwin_fakebin "$dir")
+  home="$dir/home"
+  mkdir -p "$home/state"
+
+  win_lock() {  # <session-id>
+    env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH" \
+      FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" \
+      CLAUDE_PID=7204 CLAUDE_CODE_SESSION_ID="$1" "$ROOT/bin/fm-lock.sh" 2>&1
+  }
+  out=$(win_lock S1) || fail "the Windows session could not acquire its lock: $out"
+  [ "$(cat "$home/state/.lock")" = 'win:7204' ] || fail "the lock names '$(cat "$home/state/.lock")', not win:7204"
+  [ "$(cat "$home/state/.lock-session" 2>/dev/null)" = S1 ] \
+    || fail "the Windows session did not record its session id beside the lock"
+
+  # A process that inherited the same CLAUDE_PID under another session id is
+  # not that session, so it is refused and changes nothing.
+  out=$(win_lock S2)
+  status=$?
+  [ "$status" -ne 0 ] || fail "the same Claude pid under another session id acquired the lock: $out"
+  case "$out" in *'session S1'*) ;; *) fail "the refusal did not name the owning session: $out" ;; esac
+  [ "$(cat "$home/state/.lock")" = 'win:7204' ] || fail "the refused acquisition rewrote the lock"
+  [ "$(cat "$home/state/.lock-session")" = S1 ] || fail "the refused acquisition rewrote the recorded session id"
+  if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 owned "$fakebin" "$home/state"; then
+    fail "a process under another session id owned the Windows lock"
+  fi
+  out=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$home/state") \
+    || fail "a process under another session id did not see the Windows lock as foreign"
+  [ "$out" = 'win:7204' ] || fail "expected foreign owner win:7204, got '$out'"
+
+  out=$(win_lock S1) || fail "the owning Windows session could not confirm its own lock: $out"
+  pass "session-lock: a Windows lock refuses its Claude pid under another session id"
 }
 
 test_tagged_lock_is_inert_off_windows() {
@@ -651,7 +707,7 @@ SH
       fail "the Windows-tagged value '$value' was accepted off Windows"
     fi
   done
-  if FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'"; then
+  if FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=7204 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'"; then
     fail "a Windows-tagged lock was owned off Windows"
   fi
   if foreign_owner "$fakebin" "$state" >/dev/null; then
@@ -1526,6 +1582,8 @@ test_windows_published_pid_is_confirmed_before_it_is_trusted
 test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
 test_windows_tagged_holder_is_a_live_foreign_owner
+test_windows_published_pid_needs_its_claude_session_id
+test_windows_lock_refuses_the_pid_under_another_session_id
 test_tagged_lock_is_inert_off_windows
 test_windows_task_lease_follows_a_tagged_lock_holder
 test_cygwin_ps_without_o_still_resolves_a_local_harness
