@@ -646,9 +646,9 @@ test_windows_published_pid_needs_its_claude_session_id() {
   pass "session-lock: a published Windows Claude pid is accepted only with its session id"
 }
 
-test_windows_lock_refuses_the_pid_under_another_session_id() {
-  local dir fakebin home out status
-  dir="$TMP_ROOT/win-other-session"
+test_windows_clear_rekeys_the_lock_under_the_same_pid() {
+  local dir fakebin home out
+  dir="$TMP_ROOT/win-clear-rekey"
   fakebin=$(cygwin_fakebin "$dir")
   home="$dir/home"
   mkdir -p "$home/state"
@@ -663,23 +663,17 @@ test_windows_lock_refuses_the_pid_under_another_session_id() {
   [ "$(cat "$home/state/.lock-session" 2>/dev/null)" = S1 ] \
     || fail "the Windows session did not record its session id beside the lock"
 
-  # A process that inherited the same CLAUDE_PID under another session id is
-  # not that session, so it is refused and changes nothing.
-  out=$(win_lock S2)
-  status=$?
-  [ "$status" -ne 0 ] || fail "the same Claude pid under another session id acquired the lock: $out"
-  case "$out" in *'session S1'*) ;; *) fail "the refusal did not name the owning session: $out" ;; esac
-  [ "$(cat "$home/state/.lock")" = 'win:7204' ] || fail "the refused acquisition rewrote the lock"
-  [ "$(cat "$home/state/.lock-session")" = S1 ] || fail "the refused acquisition rewrote the recorded session id"
-  if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 owned "$fakebin" "$home/state"; then
-    fail "a process under another session id owned the Windows lock"
+  # /clear keeps the Claude process, so CLAUDE_PID stays while the session id
+  # changes. As on POSIX the session keeps its lock and the sidecar is re-keyed.
+  out=$(win_lock S2) || fail "the Windows session was refused its own lock after /clear: $out"
+  [ "$(cat "$home/state/.lock")" = 'win:7204' ] || fail "the /clear re-key rewrote the lock to '$(cat "$home/state/.lock")'"
+  [ "$(cat "$home/state/.lock-session")" = S2 ] || fail "the /clear re-key did not record the new session id"
+  FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 owned "$fakebin" "$home/state" \
+    || fail "the Windows session did not own its lock after /clear"
+  if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$home/state" >/dev/null; then
+    fail "the Windows session read its own lock as foreign after /clear"
   fi
-  out=$(FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$home/state") \
-    || fail "a process under another session id did not see the Windows lock as foreign"
-  [ "$out" = 'win:7204' ] || fail "expected foreign owner win:7204, got '$out'"
-
-  out=$(win_lock S1) || fail "the owning Windows session could not confirm its own lock: $out"
-  pass "session-lock: a Windows lock refuses its Claude pid under another session id"
+  pass "session-lock: a Windows /clear keeps the lock and re-keys its session id"
 }
 
 test_tagged_lock_is_inert_off_windows() {
@@ -1583,7 +1577,7 @@ test_windows_pid_is_never_resolved_as_a_cygwin_pid
 test_a_published_identity_is_accepted_by_the_gates_that_read_the_lock
 test_windows_tagged_holder_is_a_live_foreign_owner
 test_windows_published_pid_needs_its_claude_session_id
-test_windows_lock_refuses_the_pid_under_another_session_id
+test_windows_clear_rekeys_the_lock_under_the_same_pid
 test_tagged_lock_is_inert_off_windows
 test_windows_task_lease_follows_a_tagged_lock_holder
 test_cygwin_ps_without_o_still_resolves_a_local_harness
