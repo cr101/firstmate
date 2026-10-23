@@ -387,8 +387,10 @@ fm_harness_pid_alive() {
 # contiguous harness ancestry. An id merely retained in a helper environment
 # fails that membership and is ignored: a hand-started Pi or codex primary under
 # a Claude pane still carries the pane's CLAUDE_CODE_SESSION_ID and CLAUDE_PID,
-# and must never own a lock with them. Ids are read from the environment only,
-# never from ps argv, where prompts and briefs are visible.
+# and must never own a lock with them. On Windows the ancestry is that tagged
+# CLAUDE_PID itself, so this membership is no secondary check there; the
+# FM_WIN_HARNESS_PID_VARS comment owns that limitation. Ids are read from the
+# environment only, never from ps argv, where prompts and briefs are visible.
 #
 # A --fork-session successor mints a new id, so it stays a foreign live owner
 # until the pre-fork process exits; that is the safe direction and a documented
