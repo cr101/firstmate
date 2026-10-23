@@ -1,0 +1,63 @@
+# Live run on a real Windows 11 / Git Bash host against a disposable fm-lab home.
+# Host prerequisites for main's claim lock (not part of this change): MSYS=winsymlinks:nativestrict per process, and a lab path with no /tmp mount alias.
+== host: MINGW64_NT-10.0-26300; live harness: 30688 ~\.local\bin\claude.exe; non-harness: 1684 C:\Windows\System32\svchost.exe
+
+== S1 adversarial: CLAUDE_PID set to the live claude.exe, CLAUDE_CODE_SESSION_ID absent -> refused, lock not written
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa CLAUDE_PID=30688 bin/fm-lock.sh
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh; CLAUDE_PID is taken only together with CLAUDE_CODE_SESSION_ID); operate read-only until resolved
+[exit 1]
+  state/.lock         = <absent>
+  state/.lock-session = <absent>
+
+== S2 adversarial: CLAUDE_PID names a live NON-harness Windows process (1684 svchost.exe) with a session id -> refused
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa CLAUDE_PID=1684 CLAUDE_CODE_SESSION_ID=lab-session-A bin/fm-lock.sh
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh; CLAUDE_PID is taken only together with CLAUDE_CODE_SESSION_ID); operate read-only until resolved
+[exit 1]
+  state/.lock         = <absent>
+  state/.lock-session = <absent>
+
+== S3 acquire: real claude.exe CLAUDE_PID + session id A -> owned, tagged pid + sidecar A
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa CLAUDE_PID=30688 CLAUDE_CODE_SESSION_ID=lab-session-A bin/fm-lock.sh
+lock acquired: harness pid win:30688
+[exit 0]
+  state/.lock         = win:30688
+  state/.lock-session = lab-session-A
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa bin/fm-lock.sh status
+lock: held by live harness pid win:30688
+[exit 0]
+
+== S4 re-acquire same session A -> still owned, sidecar unchanged
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa CLAUDE_PID=30688 CLAUDE_CODE_SESSION_ID=lab-session-A bin/fm-lock.sh
+lock acquired: harness pid win:30688
+[exit 0]
+  state/.lock         = win:30688
+  state/.lock-session = lab-session-A
+
+== S5 /clear re-key: same CLAUDE_PID, new session id B -> owned (not refused), sidecar re-keyed to B
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa CLAUDE_PID=30688 CLAUDE_CODE_SESSION_ID=lab-session-B bin/fm-lock.sh
+lock acquired: harness pid win:30688
+[exit 0]
+  state/.lock         = win:30688
+  state/.lock-session = lab-session-B
+
+== S6 while win:30688 is held live: a caller with no Windows identity is refused and the lock is untouched
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa bin/fm-lock.sh
+error: cannot identify this harness session on Windows: it publishes no session pid this build recognizes (see FM_WIN_HARNESS_PID_VARS in bin/fm-session-lock-lib.sh; CLAUDE_PID is taken only together with CLAUDE_CODE_SESSION_ID); operate read-only until resolved
+[exit 1]
+  state/.lock         = win:30688
+  state/.lock-session = lab-session-B
+
+== S7 stale tagged holder: lock names dead win:999999 -> status stale, live session reclaims
+  state/.lock         = win:999999
+  state/.lock-session = old-session
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa bin/fm-lock.sh status
+lock: stale (pid win:999999 dead or not a harness)
+[exit 0]
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa CLAUDE_PID=30688 CLAUDE_CODE_SESSION_ID=lab-session-C bin/fm-lock.sh
+lock acquired: harness pid win:30688
+[exit 0]
+  state/.lock         = win:30688
+  state/.lock-session = lab-session-C
+$ env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID MSYS=winsymlinks:nativestrict FM_HOME=/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M5KF38B389JTRCWSQH943XPQ/.fm-lab.YjNNfa bin/fm-lock.sh status
+lock: held by live harness pid win:30688
+[exit 0]

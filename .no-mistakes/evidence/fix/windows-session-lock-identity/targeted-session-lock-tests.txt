@@ -1,0 +1,1 @@
+ok - session-lock: a Windows session is identified from its published pid across the severed parent link
