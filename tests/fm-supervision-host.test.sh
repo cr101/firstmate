@@ -3148,7 +3148,9 @@ printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C
 SH
   chmod +x "$home/fakebin/uname" "$home/fakebin/ps"
   printf 'win:7204\n' > "$home/state/.lock"
-  FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" CLAUDE_PID=7204 \
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
+    FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
+    CLAUDE_PID=7204 CLAUDE_CODE_SESSION_ID=tagged-session \
     bash -c '"$0" park > "$FM_HOME/host.out" 2>&1; printf "%s\n" "$?" > "$FM_HOME/host.rc"' "$HOST" 2>> "$home/claude.err" &
   wait_until 150 watcher_live "$home" || fail "tagged: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
