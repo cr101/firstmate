@@ -1,0 +1,16 @@
+ok - .pi primary extension: the turn-end guard reads a Windows-tagged session lock only on Windows
+rc=0 [fm-turnend-guard.test.sh::test_pi_extension_reads_a_windows_tagged_session_lock]
+ok - OpenCode watcher plugin runs the supervision host on an opted-in home and relays every host line (quiet record)
+ok - Pi watcher arm reads a Windows-tagged session lock only on Windows
+rc=0 [fm-pi-watch-extension.test.sh::test_pi_arm_reads_a_windows_tagged_session_lock]
+    at settle (eval at <anonymous> (file:///C:~/.no-mistakes/worktrees/0667e0267d79/01M5NEYWA02FWKSDC28JQ45V79/[eval1]:5:7), <anonymous>:221:9)
+    at async file:///C:~/.no-mistakes/worktrees/0667e0267d79/01M5NEYWA02FWKSDC28JQ45V79/[eval1]:21:1
+
+Node.js v26.12.0: expected exit 0, got 1
+rc=1 [fm-pi-branch-extension.test.sh::test_branch_activates_for_a_windows_tagged_session_lock]
+ok - fm-guard stale banner: a live Windows-tagged session owns the extension hand-off, a dead or malformed one does not
+rc=0 [fm-guard-stale-banner.test.sh::test_extension_handoff_with_tagged_windows_session]
+not ok - a C compiler is required to build the fake Cursor process
+rc=1 [fm-cursor-primary.test.sh::test_park_honors_a_windows_tagged_session_lock]
+not ok - a C compiler is required to build the fake Cursor process
+rc=1 [fm-cursor-primary.test.sh::test_park_leaves_other_tagged_session_locks_alone]

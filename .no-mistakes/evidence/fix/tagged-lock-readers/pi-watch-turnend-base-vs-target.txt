@@ -1,0 +1,5 @@
+== TARGET test_pi_extension_reads_a_windows_tagged_session_lock
+ok - .pi primary extension: the turn-end guard reads a Windows-tagged session lock only on Windows
+== BASE test_pi_extension_reads_a_windows_tagged_session_lock
+not ok - Pi turn-end guard misread a Windows-tagged session lock (exit 1): file:///C:~/AppData/Local/Temp/tmp.AVHj9rKNXx/[eval1]:46
+== TARGET test_pi_arm_reads_a_windows_tagged_session_lock

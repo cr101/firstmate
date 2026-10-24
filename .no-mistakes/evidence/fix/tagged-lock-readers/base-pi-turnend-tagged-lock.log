@@ -1,0 +1,9 @@
+not ok - Pi turn-end guard misread a Windows-tagged session lock (exit 1): file:///C:~/.no-mistakes/worktrees/0667e0267d79/01M5NEYWA02FWKSDC28JQ45V79/[eval1]:46
+      throw new Error(`${label} (${name}) did not record this process's marker: ${JSON.stringify(content)}`);
+            ^
+
+Error: an owned tagged lock (win32) did not record this process's marker: ""
+    at file:///C:~/.no-mistakes/worktrees/0667e0267d79/01M5NEYWA02FWKSDC28JQ45V79/[eval1]:46:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v26.12.0

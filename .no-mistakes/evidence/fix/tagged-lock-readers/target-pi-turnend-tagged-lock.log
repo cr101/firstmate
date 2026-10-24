@@ -1,0 +1,5 @@
+ok - .pi primary extension: the turn-end guard reads a Windows-tagged session lock only on Windows
+
+real	0m2.110s
+user	0m0.392s
+sys	0m1.012s

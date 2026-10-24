@@ -1,0 +1,8 @@
+== TARGET a59368cb (after fix)  uname=MINGW64_NT-10.0-26300 live harness=win:31000 (~\.local\bin\claude.exe) dead=win:99991
+-- live-tagged      lock=win:31000    guard output: <silent: supervision owned by the live session>
+-- dead-tagged      lock=win:99991    guard output: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+-- malformed-tagged lock=win:31000x   guard output: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).

@@ -1,0 +1,5 @@
+== TARGET a59368cb (lock decision only; prompt-delivery wait removed)
+ok - branch activates for its own Windows-tagged session lock only on Windows, never for a malformed tag
+== BASE 47bd9a1f (lock decision only; prompt-delivery wait removed)
+not ok - branch must read a Windows-tagged session lock only on Windows (win32): file:///C:~/AppData/Local/Temp/tmp.AVHj9rKNXx/[eval1]:20
+Error: branch refused a wake under its own Windows-tagged lock

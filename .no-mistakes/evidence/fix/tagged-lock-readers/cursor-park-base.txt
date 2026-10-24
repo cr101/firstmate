@@ -1,0 +1,9 @@
+== BASE 47bd9a1f (before fix)  uname=MINGW64_NT-10.0-26300 CLAUDE_PID=31000 dead=win:99991 live-other=win:15664
+-- own         lock before=win:31000    after=win:31000    armed=no rc=0
+   output=<none>
+-- dead-holder lock before=win:99991    after=win:99991    armed=no rc=0
+   output=<none>
+-- live-other  lock before=win:15664    after=win:15664    armed=no rc=0
+   output=<none>
+-- malformed   lock before=win:31000x   after=win:31000x   armed=no rc=0
+   output=<none>

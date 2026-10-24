@@ -1,0 +1,13 @@
+== TARGET a59368cb (after fix)  uname=MINGW64_NT-10.0-26300 CLAUDE_PID=31000 dead=win:99991 live-other=win:15664
+-- own         lock before=win:31000    after=win:31000    armed=yes rc=0
+   output={
+  "followup_message": "⁣FIRSTMATE_OP: v1 watcher: firstmate watcher wake - one supervision event needs a handling turn now.\nstale: fixture-win needs a look\n\nRun bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This stop hook owns watcher continuity: when the handling turn ends, the next needed cycle parks automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake."
+}
+-- dead-holder lock before=win:99991    after=win:31000    armed=yes rc=0
+   output={
+  "followup_message": "⁣FIRSTMATE_OP: v1 watcher: firstmate watcher wake - one supervision event needs a handling turn now.\nstale: fixture-win needs a look\n\nRun bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This stop hook owns watcher continuity: when the handling turn ends, the next needed cycle parks automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake."
+}
+-- live-other  lock before=win:15664    after=win:15664    armed=no rc=0
+   output=<none>
+-- malformed   lock before=win:31000x   after=win:31000x   armed=no rc=0
+   output=<none>
