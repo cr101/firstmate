@@ -1,0 +1,19 @@
+== adversarial: lab-session pane claiming the DEFAULT session's drive-letter socket (target 4830d150) ==
+error: herdr launcher pane 'w1:p1' belongs to the server at '/c/Users/Cristian/AppData/Roaming/herdr/herdr.sock', not session 'fm-lab-sock-46831-11877' at '/c/Users/Cristian/AppData/Roaming/herdr/sessions/fm-lab-sock-46831-11877/herdr.sock'; refusing to place a worker from a cross-session parent identity
+launcher_identity rc=1 pane=
+
+== adversarial: forward-slash drive spelling of the lab socket is accepted as same identity ==
+launcher_identity rc=0 pane=w1:p1
+
+== malformed paths through fm_backend_herdr_canonical_socket_path (real cygpath) ==
+[C:herdr.sock] rc=1 -> 
+[relative\herdr.sock] rc=1 -> 
+[herdr.sock] rc=1 -> 
+[] rc=1 -> 
+[1:\x\herdr.sock] rc=1 -> 
+[\server\share\herdr.sock] rc=1 -> 
+[C:\no\such\dir\herdr.sock] rc=0 -> /c/no/such/dir/herdr.sock
+[/tmp/x/herdr.sock] rc=0 -> /tmp/x/herdr.sock
+
+== real cygpath failure (PATH cygpath replaced by a failing one) ==
+rc=1 -> []

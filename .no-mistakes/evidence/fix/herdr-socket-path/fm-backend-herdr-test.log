@@ -1,0 +1,9 @@
+ok - fm_backend_herdr_version_check: accepts the current protocol (14)
+ok - fm_backend_herdr_version_check: refuses an old protocol loudly
+not ok - version_check did not report herdr as missing (missing: 'not installed')
+--- output ---
+
+
+real	0m3.491s
+user	0m1.049s
+sys	0m2.019s

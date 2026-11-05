@@ -1,0 +1,17 @@
+== env injected by herdr into lab pane ==
+HERDR_SESSION=fm-lab-sock-46831-11877
+HERDR_PANE_ID=w1:p1
+HERDR_SOCKET_PATH=~\AppData\Roaming\herdr\sessions\fm-lab-sock-46831-11877\herdr.sock
+
+== base 7c6170e2 (before fix) ==
+canonical(claimed socket) rc=1 -> 
+canonical(session list socket_path) rc=1 -> 
+error: herdr launcher pane 'w1:p1' reports an unusable socket path; refusing to place a worker from an unverifiable parent identity
+launcher_identity rc=1 pane= tab= workspace=
+
+== target 4830d150 (with fix) ==
+canonical(claimed socket) rc=0 -> /c/Users/Cristian/AppData/Roaming/herdr/sessions/fm-lab-sock-46831-11877/herdr.sock
+canonical(session list socket_path) rc=0 -> /c/Users/Cristian/AppData/Roaming/herdr/sessions/fm-lab-sock-46831-11877/herdr.sock
+launcher_identity rc=0 pane=w1:p1 tab=w1:t1 workspace=w1
+
+DONE
