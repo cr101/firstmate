@@ -1,0 +1,19 @@
+### Git Bash pane whose cd cannot land (WT does not exist): /tmp/fm-labfix.VRSn/missing-wt
+error: task lab-task's worker started in '/tmp/fm-labfix.VRSn/project', not its recorded worktree '/tmp/fm-labfix.VRSn/missing-wt'; refusing to continue outside the copy holding its work
+error: Herdr pane 'fm-lab-winspawn-104770-31179:w3:p1': last foreground_cwd='/tmp/fm-labfix.VRSn/project', agent_status='unknown'
+spawn_assert_agent_worktree rc=1 elapsed=208s
+--- pane screen ---
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/project
+$ printf '__FM_CWD_1054363248740__%s__\n' "$PWD"
+__FM_CWD_1054363248740__/tmp/fm-labfix.VRSn/project__
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/project
+$ printf '__FM_CWD_10543688176755__%s__\n' "$PWD"
+__FM_CWD_10543688176755__/tmp/fm-labfix.VRSn/project__
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/project
+$ printf '__FM_CWD_1054361464014712__%s__\n' "$PWD"
+__FM_CWD_1054361464014712__/tmp/fm-labfix.VRSn/project__
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/project
+$

@@ -1,0 +1,18 @@
+### PowerShell pane (stock Herdr config), WT=/tmp/fm-labfix.VRSn/worktree
+error: task lab-task's worker started in 'unknown', not its recorded worktree '/tmp/fm-labfix.VRSn/worktree'; refusing to continue outside the copy holding its work
+error: Herdr pane 'fm-lab-winps-104936-20946:w1:p1': last foreground_cwd='unknown', agent_status='unknown'
+error: on native Windows a Herdr task pane must run Git Bash, set as [terminal] default_shell in Herdr's config; a PowerShell or cmd.exe pane cannot answer the folder probe
+spawn_assert_agent_worktree rc=1 elapsed=9s
+--- pane screen ---
+PS ~\AppData\Local\Temp\fm-labfix.VRSn\project> cd -- '/tmp/fm-labfix.VRSn/worktree'
+cd : Cannot find path 'C:\tmp\fm-labfix.VRSn\worktree' because it does not exist.
+At line:1 char:1
++ cd -- '/tmp/fm-labfix.VRSn/worktree'
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\tmp\fm-labfix.VRSn\worktree:String) [Set-Location], ItemNotFoundExc
+   eption
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.SetLocationCommand
+
+PS ~\AppData\Local\Temp\fm-labfix.VRSn\project> printf '__FM_CWD_105304947214627__%s__\n' "$PWD"
+__FM_CWD_105304947214627__C:~\AppData\Local\Temp\fm-labfix.VRSn\project__
+PS ~\AppData\Local\Temp\fm-labfix.VRSn\project>

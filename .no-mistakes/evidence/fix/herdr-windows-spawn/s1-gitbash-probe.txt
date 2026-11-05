@@ -1,0 +1,18 @@
+uname: MINGW64_NT-10.0-26300
+windows_host: yes
+pane get foreground_cwd/cwd:
+{"foreground_cwd":null,"cwd":"~\\AppData\\Local\\Temp\\fm-labfix.VRSn\\project\\"}
+passive fm_backend_herdr_current_path => ''
+fm_backend_herdr_probe_path => '/tmp/fm-labfix.VRSn/worktree' rc=0
+expected worktree: /tmp/fm-labfix.VRSn/worktree
+--- pane screen ---
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/project
+$ cd '/tmp/fm-labfix.VRSn/worktree'
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/worktree
+$ printf '__FM_CWD_1048622624024318__%s__\n' "$PWD"
+__FM_CWD_1048622624024318__/tmp/fm-labfix.VRSn/worktree__
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/worktree
+$

@@ -1,0 +1,13 @@
+### Git Bash pane (lab default_shell=Git Bash), WT=/tmp/fm-labfix.VRSn/worktree
+spawn_assert_agent_worktree rc=0 elapsed=15s
+--- pane screen ---
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/project
+$ cd -- '/tmp/fm-labfix.VRSn/worktree'
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/worktree
+$ printf '__FM_CWD_1052073238622701__%s__\n' "$PWD"
+__FM_CWD_1052073238622701__/tmp/fm-labfix.VRSn/worktree__
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-labfix.VRSn/worktree
+$

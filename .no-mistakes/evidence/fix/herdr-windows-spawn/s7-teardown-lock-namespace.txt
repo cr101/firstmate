@@ -1,0 +1,6 @@
+mount /tmp: ~/AppData/Local/Temp on /tmp type ntfs (binary,noacl,posix=0,usertemp)
+stat mode after chmod 700: 755
+namespace directly in /tmp (/tmp/fm-ns-test.kgJu): ACCEPTED
+nested namespace (/tmp/fm-ns-test.kgJu/nested): REFUSED
+namespace outside /tmp (/c/Users/Cristian/.no-mistakes/worktrees/0667e0267d79/01M6MXBEC02P63AC4J205GEKXX/../nsout.mLt1): REFUSED
+symlink namespace: REFUSED

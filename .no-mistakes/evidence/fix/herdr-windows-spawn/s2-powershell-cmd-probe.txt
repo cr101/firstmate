@@ -1,0 +1,35 @@
+=== pane w1:p1 (stock config: PowerShell)
+uname: MINGW64_NT-10.0-26300
+windows_host: yes
+pane get foreground_cwd/cwd:
+{"foreground_cwd":null,"cwd":"~\\AppData\\Local\\Temp\\fm-labfix.VRSn\\project"}
+passive fm_backend_herdr_current_path => ''
+fm_backend_herdr_probe_path => '' rc=2
+
+real	0m5.128s
+user	0m1.116s
+sys	0m2.503s
+--- pane screen ---
+PS ~\AppData\Local\Temp\fm-labfix.VRSn\project> printf '__FM_CWD_104987225252703__%s__\n' "$PWD"
+__FM_CWD_104987225252703__C:~\AppData\Local\Temp\fm-labfix.VRSn\project__
+PS ~\AppData\Local\Temp\fm-labfix.VRSn\project>
+=== pane w2:p1 (cmd.exe)
+uname: MINGW64_NT-10.0-26300
+windows_host: yes
+pane get foreground_cwd/cwd:
+{"foreground_cwd":null,"cwd":"~\\AppData\\Local\\Temp\\fm-labfix.VRSn\\project"}
+passive fm_backend_herdr_current_path => ''
+fm_backend_herdr_probe_path => '' rc=2
+
+real	0m6.371s
+user	0m0.946s
+sys	0m4.023s
+--- pane screen ---
+PS ~\AppData\Local\Temp\fm-labfix.VRSn\project> cmd.exe
+Microsoft Windows [Version 10.0.26300.9711]
+(c) Microsoft Corporation. All rights reserved.
+
+~\AppData\Local\Temp\fm-labfix.VRSn\project>printf '__FM_CWD_105054244142216__%s__\n' "$PWD"
+__FM_CWD_105054244142216__$PWD__
+
+~\AppData\Local\Temp\fm-labfix.VRSn\project>
