@@ -1,0 +1,11 @@
+PowerShell pane in a 166-char folder: ~\AppData\Local\Temp\fm-lab.VgiO5p\a-folder-name-long-enough-to-wrap-across-a-pane\second-level-folder-name-also-quite-long\treehouse-worktree-slot-01
+probe rc=2 answer="" (rc=2 means: answer arrived but is not POSIX-absolute => not Git Bash)
+--- pane screen ---
+PS ~> Set-Location '~\AppData\Local\Temp\fm-lab.VgiO5p\a-folder-name-long-enough-to-wra
+p-across-a-pane\second-level-folder-name-also-quite-long\treehouse-worktree-slot-01'
+PS ~\AppData\Local\Temp\fm-lab.VgiO5p\a-folder-name-long-enough-to-wrap-across-a-pane\second-level-fold
+er-name-also-quite-long\treehouse-worktree-slot-01> printf '__FM_CWD_14857558615394__%s__\n' "$PWD"
+__FM_CWD_14857558615394__C:~\AppData\Local\Temp\fm-lab.VgiO5p\a-folder-name-long-enough-to-wrap-across-a-
+pane\second-level-folder-name-also-quite-long\treehouse-worktree-slot-01__
+PS ~\AppData\Local\Temp\fm-lab.VgiO5p\a-folder-name-long-enough-to-wrap-across-a-pane\second-level-fold
+er-name-also-quite-long\treehouse-worktree-slot-01>

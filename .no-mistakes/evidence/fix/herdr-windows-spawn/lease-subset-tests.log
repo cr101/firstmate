@@ -1,0 +1,3 @@
+ok - native Windows Herdr accepts a folder probe answer the pane soft-wraps
+ok - native Windows Herdr refuses a missing or malformed folder probe answer
+exit=0

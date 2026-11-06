@@ -1,0 +1,23 @@
+expected folder (134 chars): /tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder-name-also-quite-long/treehouse-worktree-slot-01
+--- new fm_backend_herdr_probe_path (recent-unwrapped) ---
+rc=0 answer (134 chars): /tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder-name-also-quite-long/treehouse-worktree-slot-01
+RESULT: probe answer matches the pane's folder
+--- pre-fix read path (fm_backend_herdr_capture = --source recent) on the same pane ---
+plain recent read extracted: ''
+  recent row| __FM_CWD_148110261108124__/tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder-name-a
+  recent row| lso-quite-long/treehouse-worktree-slot-01__
+--- pane screen (recent) after probe ---
+
+Cristian@DESKTOP-RNBT136 MINGW64 ~
+$ cd '/tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder-name-also-quite-long/treeh
+ouse-worktree-slot-01'
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder
+-name-also-quite-long/treehouse-worktree-slot-01
+$ printf '__FM_CWD_148110261108124__%s__\n' "$PWD"
+__FM_CWD_148110261108124__/tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder-name-a
+lso-quite-long/treehouse-worktree-slot-01__
+
+Cristian@DESKTOP-RNBT136 MINGW64 /tmp/fm-lab.VgiO5p/a-folder-name-long-enough-to-wrap-across-a-pane/second-level-folder
+-name-also-quite-long/treehouse-worktree-slot-01
+$

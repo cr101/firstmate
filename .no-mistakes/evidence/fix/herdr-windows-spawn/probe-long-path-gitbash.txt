@@ -1,0 +1,16 @@
+== Lab fm-lab-longpath-87058-8931 pane w1:p1 runs Git Bash in a 155-char folder (pane is 120 columns)
+== PRE-FIX backend (52bb4793 herdr.sh, plain --source recent read):
+probe rc=0
+probe answer=[]
+answer length=0
+-- --source recent view of that probe (answer hard-wrapped across rows):
+__FM_CWD_893061249126864__/tmp/fm-longpath-a-folder-name-long-enough-to-wrap-the-pane-a-folder-name-long-enough-to-wrap
+-the-pane-a-folder-name-long-enough-to-wrap-the-pane-/worktree__
+
+
+== FIXED backend (f0032a01 herdr.sh, --source recent-unwrapped):
+probe rc=0
+probe answer=[/tmp/fm-longpath-a-folder-name-long-enough-to-wrap-the-pane-a-folder-name-long-enough-to-wrap-the-pane-a-folder-name-long-enough-to-wrap-the-pane-/worktree]
+answer length=155
+-- --source recent-unwrapped view of that probe:
+__FM_CWD_89660258583449__/tmp/fm-longpath-a-folder-name-long-enough-to-wrap-the-pane-a-folder-name-long-enough-to-wrap-the-pane-a-folder-name-long-enough-to-wrap-the-pane-/worktree__

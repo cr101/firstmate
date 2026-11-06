@@ -1,0 +1,8 @@
+== Scenario: probe on a PowerShell pane (lab fm-lab-longpath-87058-8931, pane w1:p1), fixed backend at f0032a01
+probe rc=2
+probe answer=[]
+answer length=0
+-- pane recent-unwrapped tail:
+PS {run-worktree}> printf '__FM_CWD_881081396611725__%s__\n' "$PWD"
+__FM_CWD_881081396611725__C:~\.no-mistakes\worktrees\0667e0267d79\01M6Q03A79EDK2HGSEV05TZDFV__
+PS {run-worktree}>
